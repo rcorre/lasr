@@ -1,8 +1,7 @@
 use anyhow::Result;
-use regex::Regex;
-use std::sync::mpsc::{Receiver, Sender, TryRecvError};
-use std::{path::PathBuf, sync::Arc};
-use tracing::trace;
+use crossbeam::channel::{Receiver, TryRecvError};
+use std::path::PathBuf;
+use tracing::{debug, trace};
 use walkdir::WalkDir;
 
 pub struct Finding {
@@ -15,8 +14,9 @@ pub struct Finding {
 pub fn search<F: Fn(Finding)>(mut rx: Receiver<String>, path: PathBuf, func: F) -> Result<()> {
     let mut pattern = Some(rx.recv()?);
 
-    while pattern.is_some() {
-        pattern = do_search(pattern.unwrap(), &mut rx, &path, &func)?;
+    while let Some(p) = pattern {
+        debug!("Starting search with pattern: '{p}'");
+        pattern = do_search(p, &mut rx, &path, &func)?;
     }
 
     Ok(())
@@ -28,6 +28,11 @@ fn do_search<F: Fn(Finding)>(
     path: &PathBuf,
     func: &F,
 ) -> Result<Option<String>> {
+    if pattern.trim().is_empty() {
+        debug!("Nothing to search, awaiting non-empty pattern");
+        return Ok(Some(rx.recv()?));
+    }
+
     let matcher = grep_regex::RegexMatcherBuilder::new()
         .case_smart(true)
         .line_terminator(Some(b'\n'))
@@ -37,12 +42,19 @@ fn do_search<F: Fn(Finding)>(
         .build();
     for path in WalkDir::new(path) {
         match rx.try_recv() {
-            Ok(pattern) => return Ok(Some(pattern)),
-            Err(TryRecvError::Empty) => {}
+            Ok(pattern) => {
+                debug!("New pattern, restarting search");
+                return Ok(Some(pattern));
+            }
+            Err(TryRecvError::Empty) => {
+                trace!("No new pattern, continuing search");
+            }
             Err(TryRecvError::Disconnected) => {
+                debug!("No pattern, aborting search");
                 return Ok(None);
             }
         }
+        debug!("Searching  path {path:?}");
         let path = path?;
         let meta = path.metadata()?;
         if meta.is_file() {
@@ -61,5 +73,7 @@ fn do_search<F: Fn(Finding)>(
             )?;
         }
     }
-    Ok(None)
+
+    // Done with this search, block until we get a new pattern
+    Ok(Some(rx.recv()?))
 }

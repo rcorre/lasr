@@ -4,12 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-tokio = { version = "1", features = ["full"] }
 clap = { version = "4.5.31", features = ["derive"] }
 nucleo = "0.5.0"
 anyhow = "1.0.96"
 ratatui = "0.29"
-crossterm = { version = "0.28", features = ["event-stream"] }
+crossterm = { version = "0.28" }
 futures = "0.3.31"
 tracing-error = "0.2.1"
 tracing = "0.1.41"
@@ -22,6 +21,7 @@ walkdir = "2.5.0"
 grep-searcher = "0.1.14"
 grep-matcher = "0.1.7"
 grep-regex = "0.1.13"
+crossbeam = "0.8.4"
 
 [dev-dependencies]
 tracing-test = "0.2.5"

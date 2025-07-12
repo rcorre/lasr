@@ -1,19 +1,15 @@
-use std::path::PathBuf;
-
-use crate::search;
-
 use super::input::LineInput;
-use anyhow::{Context, Result};
-use crossterm::event::{Event, EventStream, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use futures::{FutureExt as _, StreamExt as _};
+use crate::search;
+use anyhow::Result;
+use crossbeam::channel::{Receiver, Sender, select_biased, unbounded};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{
     DefaultTerminal, Frame,
     layout::{Constraint, Direction, Layout},
     style::{Style, Stylize},
-    widgets::{Block, Paragraph, Row, Table, TableState},
+    widgets::{Row, Table, TableState},
 };
-use tokio::sync::mpsc::{self, Receiver};
-use tracing::info;
+use tracing::{debug, info, trace};
 
 pub struct Substitution {
     path: String,
@@ -23,53 +19,62 @@ pub struct Substitution {
 }
 
 pub struct App {
-    event_stream: EventStream,
     exit: bool,
     subs: Vec<Substitution>,
-    sub_rx: Receiver<Substitution>,
-    pattern_tx: std::sync::mpsc::Sender<String>,
+    search_rx: Receiver<Substitution>,
+    event_rx: Receiver<Event>,
+    pattern_tx: Sender<String>,
     line_input: LineInput,
 }
 
 impl App {
     pub fn new() -> Result<Self> {
-        let (tx, rx) = mpsc::channel(16);
-        let (pattern_tx, pattern_rx) = std::sync::mpsc::channel();
-
+        let (search_tx, search_rx) = unbounded();
+        let (pattern_tx, pattern_rx) = unbounded();
         std::thread::spawn(move || {
             search::search(pattern_rx, ".".into(), |finding| {
-                tx.blocking_send(Substitution {
-                    path: finding.path.to_string_lossy().to_string(),
-                    line: finding.line,
-                    before: finding.line_number.to_string(),
-                    after: "".to_string(), // TODO
-                })
-                .unwrap()
+                search_tx
+                    .send(Substitution {
+                        path: finding.path.to_string_lossy().to_string(),
+                        line: finding.line,
+                        before: finding.line_number.to_string(),
+                        after: "".to_string(), // TODO
+                    })
+                    .unwrap()
             })
             .unwrap();
         });
 
+        let (event_tx, event_rx) = unbounded();
+        std::thread::spawn(move || -> Result<()> {
+            loop {
+                let ev = crossterm::event::read()?;
+                trace!("Sending terminal event {ev:?}");
+                event_tx.send(ev)?;
+            }
+        });
+
         Ok(Self {
-            event_stream: EventStream::default(),
             exit: false,
             line_input: LineInput::default(),
-            sub_rx: rx,
+            search_rx,
+            event_rx,
             subs: vec![],
             pattern_tx,
         })
     }
 
-    pub async fn run(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
+    pub fn run(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
         while !self.exit {
             terminal.draw(|frame| self.draw(frame).unwrap())?;
-            self.handle_events().await?;
+            self.handle_events()?;
         }
         Ok(())
     }
 
     // returns true if more results are needed
     fn draw(&mut self, frame: &mut Frame) -> Result<()> {
-        tracing::debug!("Drawing");
+        trace!("Drawing");
 
         let [input_area, search_area] = Layout::default()
             .direction(Direction::Vertical)
@@ -81,20 +86,14 @@ impl App {
 
         let mut table_state = TableState::default();
         let table = Table::new(
-            self.subs
-                .iter()
-                .map(|s| {
-                    Row::new(vec![
-                        s.path.as_str(),
-                        s.line.as_str(),
-                        s.before.as_str(),
-                        s.after.as_str(),
-                    ])
-                })
-                .chain(std::iter::once(Row::new(vec![
-                    "...".to_string(),
-                    "loading".to_string(),
-                ]))),
+            self.subs.iter().map(|s| {
+                Row::new(vec![
+                    s.path.as_str(),
+                    s.line.as_str(),
+                    s.before.as_str(),
+                    s.after.as_str(),
+                ])
+            }),
             &[Constraint::Max(8), Constraint::Fill(1)],
         )
         .row_highlight_style(Style::new().bold().reversed())
@@ -114,37 +113,40 @@ impl App {
     }
 
     /// updates the application's state based on user input
-    async fn handle_events(&mut self) -> Result<()> {
-        tracing::trace!("Awaiting event");
+    fn handle_events(&mut self) -> Result<()> {
+        trace!("Awaiting event");
 
-        tokio::select! {
-            event = self.event_stream.next().fuse() => {
-                tracing::debug!("Handling terminal event");
-                let event = event.context("Event stream closed")??;
-                match event {
+        // Bias for events, as they may invalidate search results
+        select_biased! {
+            recv(self.event_rx) -> ev => {
+                debug!("Handling terminal event: {ev:?}");
+                match ev? {
                     Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                        self.handle_key_event(key_event).await?
+                        self.handle_key_event(key_event)?;
                     }
                     _ => {}
                 };
-            },
-            Some(sub) = self.sub_rx.recv() => {
-                self.subs.push(sub);
-                tracing::debug!("Pushing subtitution into list, total subs: {}", self.subs.len());
+            }
+            recv(self.search_rx) -> sub => {
+                self.subs.push(sub?);
+                debug!(
+                    "Pushing subtitution into list, total subs: {}",
+                    self.subs.len()
+                );
             }
         }
         Ok(())
     }
 
-    async fn handle_key_event(&mut self, key_event: KeyEvent) -> Result<()> {
+    fn handle_key_event(&mut self, key_event: KeyEvent) -> Result<()> {
         // these keys are handled regardless of whether we're editing the query
         match key_event.code {
             KeyCode::Esc => {
-                tracing::debug!("Exit requested");
+                debug!("Exit requested");
                 self.exit = true;
             }
             KeyCode::Char('c') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
-                tracing::debug!("Exit requested");
+                debug!("Exit requested");
                 self.exit = true;
             }
             KeyCode::Enter => {
@@ -157,6 +159,8 @@ impl App {
         if let Some(pattern) = self.line_input.handle_key_event(key_event) {
             info!("New pattern: {pattern}");
             self.pattern_tx.send(pattern.to_string())?;
+            // Drain obsolete results
+            while self.search_rx.try_recv().is_ok() {}
             self.subs.clear();
         }
         Ok(())

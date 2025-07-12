@@ -88,8 +88,11 @@ mod tests {
 
     fn input(li: &mut LineInput, s: &str) {
         for c in s.chars() {
-            let result = li.handle_key_event(KeyCode::Char(c).into());
-            assert_eq!(result, Some(li.pattern()));
+            let result = li
+                .handle_key_event(KeyCode::Char(c).into())
+                .unwrap()
+                .to_string();
+            assert_eq!(result, li.pattern());
         }
     }
 
@@ -121,7 +124,10 @@ mod tests {
         assert_eq!(app.pattern, "");
         assert_eq!(app.cursor_pos, 0);
 
-        assert_eq!(app.handle_key_event(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL)), None);
+        assert_eq!(
+            app.handle_key_event(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL)),
+            None
+        );
         assert_eq!(app.pattern, "");
         assert_eq!(app.cursor_pos, 0);
     }
@@ -135,11 +141,17 @@ mod tests {
         assert_eq!(app.pattern, "abc def ghi");
         assert_eq!(app.cursor_pos, 11);
 
-        assert_eq!(app.handle_key_event(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL)), Some("abc def "));
+        assert_eq!(
+            app.handle_key_event(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL)),
+            Some("abc def ")
+        );
         assert_eq!(app.pattern, "abc def ");
         assert_eq!(app.cursor_pos, 8);
 
-        assert_eq!(app.handle_key_event(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL)), Some("abc "));
+        assert_eq!(
+            app.handle_key_event(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL)),
+            Some("abc ")
+        );
         assert_eq!(app.pattern, "abc ");
         assert_eq!(app.cursor_pos, 4);
 
@@ -147,11 +159,17 @@ mod tests {
         assert_eq!(app.pattern, "abc     ");
         assert_eq!(app.cursor_pos, 8);
 
-        assert_eq!(app.handle_key_event(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL)), Some(""));
+        assert_eq!(
+            app.handle_key_event(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL)),
+            Some("")
+        );
         assert_eq!(app.pattern, "");
         assert_eq!(app.cursor_pos, 0);
 
-        assert_eq!(app.handle_key_event(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL)), None);
+        assert_eq!(
+            app.handle_key_event(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL)),
+            None
+        );
         assert_eq!(app.pattern, "");
         assert_eq!(app.cursor_pos, 0);
     }
@@ -207,11 +225,17 @@ mod tests {
         assert_eq!(app.pattern, "abc defbar ghi");
         assert_eq!(app.cursor_pos, 10);
 
-        assert_eq!(app.handle_key_event(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL)), Some("abc  ghi"));
+        assert_eq!(
+            app.handle_key_event(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL)),
+            Some("abc  ghi")
+        );
         assert_eq!(app.pattern, "abc  ghi");
         assert_eq!(app.cursor_pos, 4);
 
-        assert_eq!(app.handle_key_event(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL)), Some(" ghi"));
+        assert_eq!(
+            app.handle_key_event(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL)),
+            Some(" ghi")
+        );
         assert_eq!(app.pattern, " ghi");
         assert_eq!(app.cursor_pos, 0);
     }

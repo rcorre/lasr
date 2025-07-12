@@ -27,8 +27,7 @@ pub fn initialize_logging() -> Result<()> {
     Ok(())
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     initialize_logging()?;
 
     let cli = Cli::parse();
@@ -38,7 +37,7 @@ async fn main() -> Result<()> {
         std::io::stdout(),
         crossterm::cursor::SetCursorStyle::BlinkingBar
     )?;
-    let result = App::new()?.run(&mut terminal).await;
+    let result = App::new()?.run(&mut terminal);
     ratatui::restore();
     result
 }
