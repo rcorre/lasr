@@ -13,6 +13,7 @@ use ratatui::{
     widgets::{Block, Paragraph, Row, Table, TableState},
 };
 use tokio::sync::mpsc::{self, Receiver};
+use tracing::info;
 
 pub struct Substitution {
     path: String,
@@ -25,16 +26,18 @@ pub struct App {
     event_stream: EventStream,
     exit: bool,
     subs: Vec<Substitution>,
-    rx: Receiver<Substitution>,
+    sub_rx: Receiver<Substitution>,
+    pattern_tx: std::sync::mpsc::Sender<String>,
     line_input: LineInput,
 }
 
 impl App {
     pub fn new() -> Result<Self> {
         let (tx, rx) = mpsc::channel(16);
+        let (pattern_tx, pattern_rx) = std::sync::mpsc::channel();
 
         std::thread::spawn(move || {
-            search::search("regex", ".".into(), |finding| {
+            search::search(pattern_rx, ".".into(), |finding| {
                 tx.blocking_send(Substitution {
                     path: finding.path.to_string_lossy().to_string(),
                     line: finding.line,
@@ -50,8 +53,9 @@ impl App {
             event_stream: EventStream::default(),
             exit: false,
             line_input: LineInput::default(),
-            rx,
+            sub_rx: rx,
             subs: vec![],
+            pattern_tx,
         })
     }
 
@@ -124,7 +128,7 @@ impl App {
                     _ => {}
                 };
             },
-            Some(sub) = self.rx.recv() => {
+            Some(sub) = self.sub_rx.recv() => {
                 self.subs.push(sub);
                 tracing::debug!("Pushing subtitution into list, total subs: {}", self.subs.len());
             }
@@ -150,7 +154,11 @@ impl App {
             _ => {}
         }
 
-        self.line_input.handle_key_event(key_event);
+        if let Some(pattern) = self.line_input.handle_key_event(key_event) {
+            info!("New pattern: {pattern}");
+            self.pattern_tx.send(pattern.to_string())?;
+            self.subs.clear();
+        }
         Ok(())
     }
 }
