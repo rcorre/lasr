@@ -3,38 +3,39 @@ use regex::Regex;
 use std::{path::PathBuf, sync::Arc};
 use tokio::sync::mpsc::Sender;
 use tracing::trace;
+use walkdir::WalkDir;
 
 pub struct Finding {
-    path: PathBuf,
-    line_number: usize,
-    line: String,
+    pub path: PathBuf,
+    pub line_number: u64,
+    pub line: String,
 }
 
-pub async fn search(tx: Sender<Finding>, re: Arc<Regex>, path: PathBuf) -> Result<()> {
-    tokio::spawn(async move { search_task(tx, re, path).await }).await?
-}
-
-async fn search_task(tx: Sender<Finding>, re: Arc<Regex>, path: PathBuf) -> Result<()> {
-    for entry in std::fs::read_dir(path.as_path())? {
-        let entry = entry?;
-        let meta = entry.metadata()?;
-        let path = entry.path();
-        trace!("Exploring path {path:?}: {meta:?}");
-        if meta.is_dir() {
-            Box::pin(search_task(tx.clone(), re.clone(), path)).await?;
-        } else if meta.is_file() {
-            let contents = std::fs::read_to_string(path.as_path())?;
-            for (line_number, line) in contents.lines().enumerate() {
-                if re.is_match(line) {
-                    trace!("Found match in {path:?}:{line_number}: {line}");
-                    tx.send(Finding {
-                        path: path.clone(),
+pub fn search<F: Fn(Finding)>(pattern: &str, path: PathBuf, func: F) -> Result<()> {
+    let matcher = grep_regex::RegexMatcherBuilder::new()
+        .case_smart(true)
+        .line_terminator(Some(b'\n'))
+        .build(pattern)?;
+    let mut searcher = grep_searcher::SearcherBuilder::new()
+        .binary_detection(grep_searcher::BinaryDetection::quit(0))
+        .build();
+    for path in WalkDir::new(path) {
+        let path = path?;
+        let meta = path.metadata()?;
+        if meta.is_file() {
+            let path = path.path();
+            searcher.search_path(
+                &matcher,
+                path,
+                grep_searcher::sinks::UTF8(|line_number, line| {
+                    func(Finding {
+                        path: path.to_owned(),
                         line_number,
                         line: line.to_string(),
-                    })
-                    .await?;
-                }
-            }
+                    });
+                    Ok(true)
+                }),
+            )?;
         }
     }
     Ok(())

@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use crate::search;
+
 use super::input::LineInput;
 use anyhow::{Context, Result};
 use crossterm::event::{Event, EventStream, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -10,7 +12,7 @@ use ratatui::{
     style::{Style, Stylize},
     widgets::{Block, Paragraph, Row, Table, TableState},
 };
-use tokio::sync::mpsc::{self, Receiver, Sender};
+use tokio::sync::mpsc::{self, Receiver};
 
 pub struct Substitution {
     path: String,
@@ -23,24 +25,32 @@ pub struct App {
     event_stream: EventStream,
     exit: bool,
     subs: Vec<Substitution>,
-    table_state: TableState,
-    tx: Sender<String>,
     rx: Receiver<Substitution>,
     line_input: LineInput,
 }
 
 impl App {
     pub fn new() -> Result<Self> {
-        let (req_tx, req_rx) = mpsc::channel(16);
-        let (resp_tx, resp_rx) = mpsc::channel(16);
+        let (tx, rx) = mpsc::channel(16);
+
+        std::thread::spawn(move || {
+            search::search("regex", ".".into(), |finding| {
+                tx.blocking_send(Substitution {
+                    path: finding.path.to_string_lossy().to_string(),
+                    line: finding.line,
+                    before: finding.line_number.to_string(),
+                    after: "".to_string(), // TODO
+                })
+                .unwrap()
+            })
+            .unwrap();
+        });
 
         Ok(Self {
             event_stream: EventStream::default(),
             exit: false,
-            table_state: TableState::default().with_selected(Some(0)),
             line_input: LineInput::default(),
-            tx: req_tx,
-            rx: resp_rx,
+            rx,
             subs: vec![],
         })
     }
@@ -65,6 +75,7 @@ impl App {
 
         self.line_input.draw(frame, input_area);
 
+        let mut table_state = TableState::default();
         let table = Table::new(
             self.subs
                 .iter()
@@ -84,7 +95,7 @@ impl App {
         )
         .row_highlight_style(Style::new().bold().reversed())
         .highlight_symbol(">");
-        frame.render_stateful_widget(table, search_area, &mut self.table_state);
+        frame.render_stateful_widget(table, search_area, &mut table_state);
 
         // if self.table_state.offset() + search_area.height as usize >= self.issues.len()
         // {

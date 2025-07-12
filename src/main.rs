@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
-use sploot::tui::App;
+use lasr::tui::App;
 use tracing_error::ErrorLayer;
 use tracing_subscriber::{Layer as _, layer::SubscriberExt as _, util::SubscriberInitExt as _};
 
