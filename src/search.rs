@@ -1,5 +1,9 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use crossbeam::channel::{Receiver, TryRecvError};
+use grep::{
+    regex::RegexMatcherBuilder,
+    searcher::{BinaryDetection, SearcherBuilder, sinks},
+};
 use std::path::PathBuf;
 use tracing::{debug, info, trace};
 use walkdir::WalkDir;
@@ -11,7 +15,11 @@ pub struct Finding {
 }
 
 // rx sends the new pattern
-pub fn search<F: Fn(Finding)>(mut rx: Receiver<String>, path: PathBuf, func: F) -> Result<()> {
+pub fn search<F: Fn(Finding) -> Result<()>>(
+    mut rx: Receiver<String>,
+    path: PathBuf,
+    func: F,
+) -> Result<()> {
     let mut pattern = Some(rx.recv()?);
 
     while let Some(p) = pattern {
@@ -23,7 +31,7 @@ pub fn search<F: Fn(Finding)>(mut rx: Receiver<String>, path: PathBuf, func: F) 
     Ok(())
 }
 
-fn do_search<F: Fn(Finding)>(
+fn do_search<F: Fn(Finding) -> Result<()>>(
     pattern: String,
     rx: &mut Receiver<String>,
     path: &PathBuf,
@@ -34,12 +42,13 @@ fn do_search<F: Fn(Finding)>(
         return Ok(Some(rx.recv()?));
     }
 
-    let matcher = grep_regex::RegexMatcherBuilder::new()
+    let matcher = RegexMatcherBuilder::new()
         .case_smart(true)
         .line_terminator(Some(b'\n'))
-        .build(&pattern)?;
-    let mut searcher = grep_searcher::SearcherBuilder::new()
-        .binary_detection(grep_searcher::BinaryDetection::quit(0))
+        .build(&pattern)
+        .with_context(|| format!("Failed to compile searcher with pattern: {pattern}"))?;
+    let mut searcher = SearcherBuilder::new()
+        .binary_detection(BinaryDetection::quit(0))
         .build();
     for path in WalkDir::new(path) {
         match rx.try_recv() {
@@ -60,18 +69,23 @@ fn do_search<F: Fn(Finding)>(
         let meta = path.metadata()?;
         if meta.is_file() {
             let path = path.path();
-            searcher.search_path(
+            if let Err(e) = searcher.search_path(
                 &matcher,
                 path,
-                grep_searcher::sinks::UTF8(|line_number, line| {
-                    func(Finding {
+                sinks::UTF8(|line_number, line| {
+                    match func(Finding {
                         path: path.to_owned(),
                         line_number,
                         line: line.to_string(),
-                    });
-                    Ok(true)
+                    }) {
+                        Ok(_) => Ok(true),
+                        Err(e) => Err(std::io::Error::other(e.to_string())),
+                    }
                 }),
-            )?;
+            ) {
+                // Probably invalid UTF-8
+                debug!("Failed to search {path:?}: {e:?}");
+            };
         }
     }
 

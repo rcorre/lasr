@@ -18,10 +18,8 @@ syntect = "5.2.0"
 serde_json = "1.0.140"
 regex = "1.11.1"
 walkdir = "2.5.0"
-grep-searcher = "0.1.14"
-grep-matcher = "0.1.7"
-grep-regex = "0.1.13"
 crossbeam = "0.8.4"
+grep = "0.3.2"
 
 [dev-dependencies]
 tracing-test = "0.2.5"

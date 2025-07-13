@@ -1,48 +1,79 @@
+use std::ops::Range;
+
 use super::input::LineInput;
-use crate::search;
-use anyhow::Result;
+use crate::search::{self, Finding};
+use anyhow::{Context, Result};
 use crossbeam::channel::{Receiver, Sender, select_biased, unbounded};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{
     DefaultTerminal, Frame,
     layout::{Constraint, Direction, Layout},
     style::{Style, Stylize},
+    text::{Line, Span},
     widgets::{Row, Table, TableState},
 };
-use tracing::{debug, info, trace};
+use regex::Regex;
+use tracing::{debug, info, trace, warn};
 
+#[derive(Debug)]
 pub struct Substitution {
     path: String,
-    line: String,
+    line_number: String,
     before: String,
     after: String,
+    matches: Vec<Range<usize>>,
+}
+
+impl Substitution {
+    fn to_line(&self) -> Line {
+        let mut line = Line::default();
+        let mut last_end = 0;
+
+        for range in &self.matches {
+            // Add text before the match
+            if last_end < range.start {
+                line.push_span(Span::raw(&self.before[last_end..range.start]));
+            }
+
+            // Add the match with red background
+            line.push_span(Span::styled(
+                &self.before[range.clone()],
+                Style::default().bg(ratatui::style::Color::Red),
+            ));
+
+            last_end = range.end;
+        }
+
+        // Add remaining text after the last match
+        if last_end < self.before.len() {
+            line.push_span(Span::raw(&self.before[last_end..]));
+        }
+
+        line
+    }
 }
 
 pub struct App {
     exit: bool,
     subs: Vec<Substitution>,
-    search_rx: Receiver<Substitution>,
+    search_rx: Receiver<Finding>,
     event_rx: Receiver<Event>,
     pattern_tx: Sender<String>,
     line_input: LineInput,
+    re: Option<Regex>,
 }
 
 impl App {
     pub fn new() -> Result<Self> {
         let (search_tx, search_rx) = unbounded();
         let (pattern_tx, pattern_rx) = unbounded();
-        std::thread::spawn(move || {
+        std::thread::spawn(move || -> Result<()> {
             search::search(pattern_rx, ".".into(), |finding| {
-                search_tx
-                    .send(Substitution {
-                        path: finding.path.to_string_lossy().to_string(),
-                        line: finding.line,
-                        before: finding.line_number.to_string(),
-                        after: "".to_string(), // TODO
-                    })
-                    .unwrap()
+                search_tx.send(finding)?;
+                Ok(())
             })
-            .unwrap();
+            .context("Search thread exited")?;
+            Ok(())
         });
 
         let (event_tx, event_rx) = unbounded();
@@ -61,6 +92,7 @@ impl App {
             event_rx,
             subs: vec![],
             pattern_tx,
+            re: None,
         })
     }
 
@@ -84,20 +116,17 @@ impl App {
 
         self.line_input.draw(frame, input_area);
 
-        let mut table_state = TableState::default();
         let table = Table::new(
             self.subs.iter().map(|s| {
                 Row::new(vec![
-                    s.path.as_str(),
-                    s.line.as_str(),
-                    s.before.as_str(),
-                    s.after.as_str(),
+                    Line::raw(&s.path),
+                    Line::raw(s.line_number.as_str()),
+                    s.to_line(),
                 ])
             }),
-            &[Constraint::Max(8), Constraint::Fill(1)],
-        )
-        .row_highlight_style(Style::new().bold().reversed())
-        .highlight_symbol(">");
+            &[Constraint::Fill(1), Constraint::Max(8), Constraint::Fill(4)],
+        );
+        let mut table_state = TableState::default();
         frame.render_stateful_widget(table, search_area, &mut table_state);
 
         // if self.table_state.offset() + search_area.height as usize >= self.issues.len()
@@ -109,6 +138,31 @@ impl App {
         //     }
         // }
 
+        Ok(())
+    }
+
+    fn on_finding(&mut self, finding: Finding) -> Result<()> {
+        let Some(ref re) = self.re else {
+            warn!("Got substitution, but no regex set");
+            return Ok(());
+        };
+        let matches = re
+            .find_iter(&finding.line)
+            .map(|m| Range {
+                start: m.start(),
+                end: m.end(),
+            })
+            .collect();
+        let sub = Substitution {
+            path: finding.path.to_string_lossy().to_string(),
+            line_number: finding.line_number.to_string(),
+            after: re.replace(&finding.line, "XXX").into_owned(),
+            before: finding.line,
+            matches,
+        };
+        debug!("Pushing item: {sub:?}");
+        self.subs.push(sub);
+        debug!("Total items: {}", self.subs.len());
         Ok(())
     }
 
@@ -128,11 +182,7 @@ impl App {
                 };
             }
             recv(self.search_rx) -> sub => {
-                self.subs.push(sub?);
-                debug!(
-                    "Pushing subtitution into list, total subs: {}",
-                    self.subs.len()
-                );
+                self.on_finding(sub?)?;
             }
         }
         Ok(())
@@ -157,6 +207,14 @@ impl App {
         }
 
         if let Some(pattern) = self.line_input.handle_key_event(key_event) {
+            self.re = match Regex::new(pattern) {
+                Ok(re) => Some(re),
+                Err(err) => {
+                    // Expected to happen as the user is typing, not an error
+                    info!("Not a valid regex: '{pattern}': {err}");
+                    return Ok(());
+                }
+            };
             info!("New pattern: {pattern}");
             self.pattern_tx.send(pattern.to_string())?;
             // Drain obsolete results

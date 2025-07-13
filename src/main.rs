@@ -37,7 +37,7 @@ fn main() -> Result<()> {
         std::io::stdout(),
         crossterm::cursor::SetCursorStyle::BlinkingBar
     )?;
-    let result = App::new()?.run(&mut terminal);
+    App::new().unwrap().run(&mut terminal).unwrap();
     ratatui::restore();
-    result
+    Ok(())
 }
