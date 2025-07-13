@@ -1,7 +1,7 @@
 use anyhow::Result;
 use crossbeam::channel::{Receiver, TryRecvError};
 use std::path::PathBuf;
-use tracing::{debug, trace};
+use tracing::{debug, info, trace};
 use walkdir::WalkDir;
 
 pub struct Finding {
@@ -19,6 +19,7 @@ pub fn search<F: Fn(Finding)>(mut rx: Receiver<String>, path: PathBuf, func: F) 
         pattern = do_search(p, &mut rx, &path, &func)?;
     }
 
+    info!("Ending search");
     Ok(())
 }
 
