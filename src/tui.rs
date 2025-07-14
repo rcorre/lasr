@@ -8,7 +8,7 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{
     DefaultTerminal, Frame,
     layout::{Constraint, Direction, Layout},
-    style::{Style, Stylize},
+    style::Style,
     text::{Line, Span},
     widgets::{Row, Table, TableState},
 };
@@ -16,16 +16,15 @@ use regex::Regex;
 use tracing::{debug, info, trace, warn};
 
 #[derive(Debug)]
-pub struct Substitution {
+struct Substitution {
     path: String,
     line_number: String,
     before: String,
-    after: String,
     matches: Vec<Range<usize>>,
 }
 
 impl Substitution {
-    fn to_line(&self) -> Line {
+    fn to_line<'a>(&'a self, replacement: &'a str) -> Line<'a> {
         let mut line = Line::default();
         let mut last_end = 0;
 
@@ -35,10 +34,16 @@ impl Substitution {
                 line.push_span(Span::raw(&self.before[last_end..range.start]));
             }
 
-            // Add the match with red background
+            // Add the match with a red background
             line.push_span(Span::styled(
                 &self.before[range.clone()],
                 Style::default().bg(ratatui::style::Color::Red),
+            ));
+
+            // Add the replacement with a green background
+            line.push_span(Span::styled(
+                replacement,
+                Style::default().bg(ratatui::style::Color::Green),
             ));
 
             last_end = range.end;
@@ -59,8 +64,11 @@ pub struct App {
     search_rx: Receiver<Finding>,
     event_rx: Receiver<Event>,
     pattern_tx: Sender<String>,
-    line_input: LineInput,
+    pattern_input: LineInput,
+    replacement_input: LineInput,
+    editing_pattern: bool,
     re: Option<Regex>,
+    replacement: String,
 }
 
 impl App {
@@ -87,12 +95,15 @@ impl App {
 
         Ok(Self {
             exit: false,
-            line_input: LineInput::default(),
+            pattern_input: LineInput::default(),
+            replacement_input: LineInput::default(),
             search_rx,
             event_rx,
             subs: vec![],
             pattern_tx,
+            editing_pattern: true,
             re: None,
+            replacement: "".to_string(),
         })
     }
 
@@ -114,14 +125,14 @@ impl App {
             .margin(1) // to account for the border we draw around everything
             .areas(frame.area());
 
-        self.line_input.draw(frame, input_area);
+        self.pattern_input.draw(frame, input_area);
 
         let table = Table::new(
             self.subs.iter().map(|s| {
                 Row::new(vec![
                     Line::raw(&s.path),
                     Line::raw(s.line_number.as_str()),
-                    s.to_line(),
+                    s.to_line(&self.replacement),
                 ])
             }),
             &[Constraint::Fill(1), Constraint::Max(8), Constraint::Fill(4)],
@@ -156,7 +167,6 @@ impl App {
         let sub = Substitution {
             path: finding.path.to_string_lossy().to_string(),
             line_number: finding.line_number.to_string(),
-            after: re.replace(&finding.line, "XXX").into_owned(),
             before: finding.line,
             matches,
         };
@@ -199,6 +209,13 @@ impl App {
                 debug!("Exit requested");
                 self.exit = true;
             }
+            KeyCode::Tab => {
+                self.editing_pattern = !self.editing_pattern;
+                info!(
+                    "Toggled editing mode. editing_pattern={}",
+                    self.editing_pattern
+                );
+            }
             KeyCode::Enter => {
                 // self.editing_query = false;
                 // TODO
@@ -206,7 +223,11 @@ impl App {
             _ => {}
         }
 
-        if let Some(pattern) = self.line_input.handle_key_event(key_event) {
+        if self.editing_pattern {
+            let Some(pattern) = self.pattern_input.handle_key_event(key_event) else {
+                debug!("Pattern unchanged");
+                return Ok(());
+            };
             self.re = match Regex::new(pattern) {
                 Ok(re) => Some(re),
                 Err(err) => {
@@ -220,7 +241,15 @@ impl App {
             // Drain obsolete results
             while self.search_rx.try_recv().is_ok() {}
             self.subs.clear();
+        } else {
+            let Some(replacement) = self.replacement_input.handle_key_event(key_event) else {
+                debug!("Replacement unchanged");
+                return Ok(());
+            };
+            self.replacement = replacement.to_string();
+            info!("New pattern: {replacement}");
         }
+
         Ok(())
     }
 }
