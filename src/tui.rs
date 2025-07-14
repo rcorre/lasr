@@ -7,10 +7,10 @@ use crossbeam::channel::{Receiver, Sender, select_biased, unbounded};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{
     DefaultTerminal, Frame,
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Position},
     style::Style,
     text::{Line, Span},
-    widgets::{Row, Table, TableState},
+    widgets::{Block, Paragraph, Row, Table, TableState},
 };
 use regex::Regex;
 use tracing::{debug, info, trace, warn};
@@ -120,11 +120,36 @@ impl App {
 
         let [input_area, search_area] = Layout::default()
             .direction(Direction::Vertical)
-            .constraints(vec![Constraint::Length(2), Constraint::Fill(1)])
+            .constraints(vec![Constraint::Length(3), Constraint::Fill(1)])
             .margin(1) // to account for the border we draw around everything
             .areas(frame.area());
 
-        self.pattern_input.draw(frame, input_area);
+        let [pattern_area, tab_area, replace_area] = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints(vec![
+                Constraint::Length(self.pattern_input.size().max(16)),
+                Constraint::Length(9),
+                Constraint::Length(self.replacement_input.size().max(16)),
+            ])
+            .areas(input_area);
+
+        self.pattern_input.draw(frame, pattern_area, "Search");
+        self.replacement_input.draw(frame, replace_area, "Replace");
+
+        frame.render_widget(Paragraph::new("\n< TAB >").centered(), tab_area);
+
+        // All the +1s account for borders
+        frame.set_cursor_position(if self.editing_pattern {
+            Position::new(
+                pattern_area.x + self.pattern_input.cursor_pos() + 1,
+                pattern_area.y + 1,
+            )
+        } else {
+            Position::new(
+                replace_area.x + self.replacement_input.cursor_pos() + 1,
+                replace_area.y + 1,
+            )
+        });
 
         let table = Table::new(
             self.subs.iter().map(|s| {
@@ -134,7 +159,8 @@ impl App {
                 ])
             }),
             &[Constraint::Fill(1), Constraint::Fill(3)],
-        );
+        )
+        .block(Block::bordered());
         let mut table_state = TableState::default();
         frame.render_stateful_widget(table, search_area, &mut table_state);
 

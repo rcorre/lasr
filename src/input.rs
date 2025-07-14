@@ -74,11 +74,15 @@ impl LineInput {
         &self.pattern
     }
 
-    pub fn draw(&self, frame: &mut Frame, area: Rect) {
-        let input =
-            Paragraph::new(self.pattern.as_str()).block(Block::new().borders(Borders::BOTTOM));
+    pub fn size(&self) -> u16 {
+        // +2 for borders
+        self.pattern.len() as u16 + 2
+    }
+
+    pub fn draw(&self, frame: &mut Frame, area: Rect, title: &str) {
+        let input = Paragraph::new(self.pattern.as_str())
+            .block(Block::new().borders(Borders::all()).title(title));
         frame.render_widget(input, area);
-        frame.set_cursor_position(Position::new(area.x + self.cursor_pos as u16, area.y));
     }
 }
 
