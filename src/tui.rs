@@ -17,8 +17,7 @@ use tracing::{debug, info, trace, warn};
 
 #[derive(Debug)]
 struct Substitution {
-    path: String,
-    line_number: String,
+    path_with_line: String,
     before: String,
     matches: Vec<Range<usize>>,
 }
@@ -130,24 +129,14 @@ impl App {
         let table = Table::new(
             self.subs.iter().map(|s| {
                 Row::new(vec![
-                    Line::raw(&s.path),
-                    Line::raw(s.line_number.as_str()),
+                    Line::raw(&s.path_with_line),
                     s.to_line(&self.replacement),
                 ])
             }),
-            &[Constraint::Fill(1), Constraint::Max(8), Constraint::Fill(4)],
+            &[Constraint::Fill(1), Constraint::Fill(3)],
         );
         let mut table_state = TableState::default();
         frame.render_stateful_widget(table, search_area, &mut table_state);
-
-        // if self.table_state.offset() + search_area.height as usize >= self.issues.len()
-        // {
-        //     tracing::debug!("Requesting more items");
-        //     if self.tx.try_send(PAGE_SIZE).is_err() {
-        //         // TODO: watch
-        //         tracing::debug!("Queue full");
-        //     }
-        // }
 
         Ok(())
     }
@@ -165,8 +154,7 @@ impl App {
             })
             .collect();
         let sub = Substitution {
-            path: finding.path.to_string_lossy().to_string(),
-            line_number: finding.line_number.to_string(),
+            path_with_line: format!("{}:{}", finding.path.to_string_lossy(), finding.line_number),
             before: finding.line,
             matches,
         };
