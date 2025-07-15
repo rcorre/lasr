@@ -1,7 +1,7 @@
-use std::ops::Range;
+use std::{ops::Range, path::PathBuf};
 
 use super::input::LineInput;
-use crate::search::{self, Finding};
+use crate::search::{self, FileMatch};
 use anyhow::{Context, Result};
 use crossbeam::channel::{Receiver, Sender, select_biased, unbounded};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -16,13 +16,19 @@ use regex::Regex;
 use tracing::{debug, info, trace, warn};
 
 #[derive(Debug)]
-struct Substitution {
-    path_with_line: String,
-    before: String,
+struct LineSubstitution {
+    line_number: u64,
+    text: String,
     matches: Vec<Range<usize>>,
 }
 
-impl Substitution {
+#[derive(Debug)]
+struct FileSubstitution {
+    path: PathBuf,
+    subs: Vec<LineSubstitution>,
+}
+
+impl LineSubstitution {
     fn to_line<'a>(&'a self, replacement: &'a str) -> Line<'a> {
         let mut line = Line::default();
         let mut last_end = 0;
@@ -30,12 +36,12 @@ impl Substitution {
         for range in &self.matches {
             // Add text before the match
             if last_end < range.start {
-                line.push_span(Span::raw(&self.before[last_end..range.start]));
+                line.push_span(Span::raw(&self.text[last_end..range.start]));
             }
 
             // Add the match with a red background
             line.push_span(Span::styled(
-                &self.before[range.clone()],
+                &self.text[range.clone()],
                 Style::default().bg(ratatui::style::Color::Red),
             ));
 
@@ -49,8 +55,8 @@ impl Substitution {
         }
 
         // Add remaining text after the last match
-        if last_end < self.before.len() {
-            line.push_span(Span::raw(&self.before[last_end..]));
+        if last_end < self.text.len() {
+            line.push_span(Span::raw(&self.text[last_end..]));
         }
 
         line
@@ -59,8 +65,8 @@ impl Substitution {
 
 pub struct App {
     exit: bool,
-    subs: Vec<Substitution>,
-    search_rx: Receiver<Finding>,
+    subs: Vec<FileSubstitution>,
+    search_rx: Receiver<FileMatch>,
     event_rx: Receiver<Event>,
     pattern_tx: Sender<String>,
     pattern_input: LineInput,
@@ -152,9 +158,9 @@ impl App {
         });
 
         let table = Table::new(
-            self.subs.iter().map(|s| {
+            self.subs.iter().flat_map(|s| s.subs.iter()).map(|s| {
                 Row::new(vec![
-                    Line::raw(&s.path_with_line),
+                    Line::raw(s.line_number.to_string()),
                     s.to_line(&self.replacement),
                 ])
             }),
@@ -167,22 +173,28 @@ impl App {
         Ok(())
     }
 
-    fn on_finding(&mut self, finding: Finding) -> Result<()> {
+    fn on_finding(&mut self, finding: FileMatch) -> Result<()> {
         let Some(ref re) = self.re else {
             warn!("Got substitution, but no regex set");
             return Ok(());
         };
-        let matches = re
-            .find_iter(&finding.line)
-            .map(|m| Range {
-                start: m.start(),
-                end: m.end(),
-            })
-            .collect();
-        let sub = Substitution {
-            path_with_line: format!("{}:{}", finding.path.to_string_lossy(), finding.line_number),
-            before: finding.line,
-            matches,
+        let sub = FileSubstitution {
+            path: finding.path,
+            subs: finding
+                .lines
+                .into_iter()
+                .map(|line| LineSubstitution {
+                    line_number: line.number,
+                    matches: re
+                        .find_iter(&line.text)
+                        .map(|m| Range {
+                            start: m.start(),
+                            end: m.end(),
+                        })
+                        .collect(),
+                    text: line.text,
+                })
+                .collect(),
         };
         debug!("Pushing item: {sub:?}");
         self.subs.push(sub);

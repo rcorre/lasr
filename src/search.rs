@@ -8,14 +8,18 @@ use std::path::PathBuf;
 use tracing::{debug, info, trace};
 use walkdir::WalkDir;
 
-pub struct Finding {
+pub struct LineMatch {
+    pub number: u64,
+    pub text: String,
+}
+
+pub struct FileMatch {
     pub path: PathBuf,
-    pub line_number: u64,
-    pub line: String,
+    pub lines: Vec<LineMatch>,
 }
 
 // rx sends the new pattern
-pub fn search<F: Fn(Finding) -> Result<()>>(
+pub fn search<F: Fn(FileMatch) -> Result<()>>(
     mut rx: Receiver<String>,
     path: PathBuf,
     func: F,
@@ -31,7 +35,7 @@ pub fn search<F: Fn(Finding) -> Result<()>>(
     Ok(())
 }
 
-fn do_search<F: Fn(Finding) -> Result<()>>(
+fn do_search<F: Fn(FileMatch) -> Result<()>>(
     pattern: String,
     rx: &mut Receiver<String>,
     path: &PathBuf,
@@ -68,24 +72,26 @@ fn do_search<F: Fn(Finding) -> Result<()>>(
         let path = path?;
         let meta = path.metadata()?;
         if meta.is_file() {
-            let path = path.path();
+            let mut lines = vec![];
             if let Err(e) = searcher.search_path(
                 &matcher,
-                path,
-                sinks::UTF8(|line_number, line| {
-                    match func(Finding {
-                        path: path.to_owned(),
-                        line_number,
-                        line: line.to_string(),
-                    }) {
-                        Ok(_) => Ok(true),
-                        Err(e) => Err(std::io::Error::other(e.to_string())),
-                    }
+                path.path(),
+                sinks::UTF8(|number, text| {
+                    lines.push(LineMatch {
+                        number,
+                        text: text.to_string(),
+                    });
+                    Ok(true)
                 }),
             ) {
                 // Probably invalid UTF-8
                 debug!("Failed to search {path:?}: {e:?}");
+                continue;
             };
+            func(FileMatch {
+                path: path.into_path(),
+                lines,
+            })?;
         }
     }
 
