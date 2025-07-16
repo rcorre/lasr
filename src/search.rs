@@ -4,9 +4,9 @@ use grep::{
     regex::RegexMatcherBuilder,
     searcher::{BinaryDetection, SearcherBuilder, sinks},
 };
+use ignore::Walk;
 use std::path::PathBuf;
 use tracing::{debug, info, trace};
-use walkdir::WalkDir;
 
 pub struct LineMatch {
     pub number: u64,
@@ -54,7 +54,7 @@ fn do_search<F: Fn(FileMatch) -> Result<()>>(
     let mut searcher = SearcherBuilder::new()
         .binary_detection(BinaryDetection::quit(0))
         .build();
-    for path in WalkDir::new(path) {
+    for path in Walk::new(path) {
         match rx.try_recv() {
             Ok(pattern) => {
                 debug!("New pattern, restarting search");
