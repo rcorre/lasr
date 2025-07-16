@@ -157,18 +157,34 @@ impl App {
             )
         });
 
-        let table = Table::new(
-            self.subs.iter().flat_map(|s| s.subs.iter()).map(|s| {
-                Row::new(vec![
-                    Line::raw(s.line_number.to_string()),
-                    s.to_line(&self.replacement),
-                ])
-            }),
-            &[Constraint::Fill(1), Constraint::Fill(3)],
-        )
-        .block(Block::bordered());
-        let mut table_state = TableState::default();
-        frame.render_stateful_widget(table, search_area, &mut table_state);
+        let mut size_left = search_area.height;
+        let constraints: Vec<_> = self
+            .subs
+            .iter()
+            .map(|s| (s.subs.len() + 2) as u16) // +2 for top/bottom border
+            .take_while(|s| {
+                size_left = size_left.saturating_sub(*s);
+                size_left > 0
+            })
+            .map(Constraint::Length)
+            .collect();
+
+        let search_areas = Layout::vertical(constraints.as_slice()).split(search_area);
+
+        for (area, sub) in search_areas.iter().zip(self.subs.iter()) {
+            let table = Table::new(
+                sub.subs.iter().map(|s| {
+                    Row::new(vec![
+                        Line::raw(s.line_number.to_string()),
+                        s.to_line(&self.replacement),
+                    ])
+                }),
+                &[Constraint::Max(6), Constraint::Fill(1)],
+            )
+            .block(Block::bordered().title_top(sub.path.to_string_lossy()));
+            let mut table_state = TableState::default();
+            frame.render_stateful_widget(table, *area, &mut table_state);
+        }
 
         Ok(())
     }

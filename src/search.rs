@@ -88,10 +88,12 @@ fn do_search<F: Fn(FileMatch) -> Result<()>>(
                 debug!("Failed to search {path:?}: {e:?}");
                 continue;
             };
-            func(FileMatch {
-                path: path.into_path(),
-                lines,
-            })?;
+            if !lines.is_empty() {
+                func(FileMatch {
+                    path: path.into_path(),
+                    lines,
+                })?;
+            }
         }
     }
 
