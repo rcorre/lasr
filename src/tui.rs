@@ -3,7 +3,7 @@ use std::{ops::Range, path::PathBuf};
 use super::input::LineInput;
 use crate::search::{self, FileMatch};
 use anyhow::{Context, Result};
-use crossbeam::channel::{Receiver, Sender, select_biased, unbounded};
+use crossbeam::channel::{Receiver, Sender, bounded, never, select_biased, unbounded};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{
     DefaultTerminal, Frame,
@@ -78,7 +78,9 @@ pub struct App {
 
 impl App {
     pub fn new() -> Result<Self> {
-        let (search_tx, search_rx) = unbounded();
+        // Search is bounded, so the search thread will block once we have enough results
+        let (search_tx, search_rx) = bounded(1);
+        // Pattern is unbounded -- we can keep sending new patterns to the search thread
         let (pattern_tx, pattern_rx) = unbounded();
         std::thread::spawn(move || -> Result<()> {
             search::search(pattern_rx, ".".into(), |finding| {
@@ -89,6 +91,7 @@ impl App {
             Ok(())
         });
 
+        // Events are bounded, don't need to read more than one at once
         let (event_tx, event_rx) = unbounded();
         std::thread::spawn(move || -> Result<()> {
             loop {
@@ -114,14 +117,15 @@ impl App {
 
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
         while !self.exit {
-            terminal.draw(|frame| self.draw(frame).unwrap())?;
-            self.handle_events()?;
+            let mut need_more = false;
+            terminal.draw(|frame| need_more = self.draw(frame).unwrap())?;
+            self.handle_events(need_more)?;
         }
         Ok(())
     }
 
     // returns true if more results are needed
-    fn draw(&mut self, frame: &mut Frame) -> Result<()> {
+    fn draw(&mut self, frame: &mut Frame) -> Result<bool> {
         trace!("Drawing");
 
         let [input_area, search_area] = Layout::default()
@@ -163,8 +167,9 @@ impl App {
             .iter()
             .map(|s| (s.subs.len() + 2) as u16) // +2 for top/bottom border
             .take_while(|s| {
+                let ret = size_left > 0;
                 size_left = size_left.saturating_sub(*s);
-                size_left > 0
+                ret
             })
             .map(Constraint::Length)
             .collect();
@@ -186,7 +191,7 @@ impl App {
             frame.render_stateful_widget(table, *area, &mut table_state);
         }
 
-        Ok(())
+        Ok(size_left > 0)
     }
 
     fn on_finding(&mut self, finding: FileMatch) -> Result<()> {
@@ -219,8 +224,10 @@ impl App {
     }
 
     /// updates the application's state based on user input
-    fn handle_events(&mut self) -> Result<()> {
+    fn handle_events(&mut self, need_more: bool) -> Result<()> {
         trace!("Awaiting event");
+
+        let search_rx = if need_more { &self.search_rx } else { &never() };
 
         // Bias for events, as they may invalidate search results
         select_biased! {
@@ -233,7 +240,7 @@ impl App {
                     _ => {}
                 };
             }
-            recv(self.search_rx) -> sub => {
+            recv(search_rx) -> sub => {
                 self.on_finding(sub?)?;
             }
         }
