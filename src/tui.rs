@@ -77,13 +77,14 @@ pub struct App {
 }
 
 impl App {
-    pub fn new() -> Result<Self> {
+    pub fn new(path: impl Into<PathBuf>) -> Result<Self> {
         // Search is bounded, so the search thread will block once we have enough results
         let (search_tx, search_rx) = bounded(1);
         // Pattern is unbounded -- we can keep sending new patterns to the search thread
         let (pattern_tx, pattern_rx) = unbounded();
+        let path = path.into();
         std::thread::spawn(move || -> Result<()> {
-            search::search(pattern_rx, ".".into(), |finding| {
+            search::search(pattern_rx, path, |finding| {
                 search_tx.send(finding)?;
                 Ok(())
             })
@@ -300,5 +301,97 @@ impl App {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::App;
+    use crossterm::event::KeyCode;
+    use insta::assert_snapshot;
+    use ratatui::{Terminal, backend::TestBackend};
+
+    fn input(app: &mut App, s: &str) {
+        for c in s.chars() {
+            app.handle_key_event(KeyCode::Char(c).into()).unwrap();
+        }
+    }
+
+    #[test]
+    fn test_empty() {
+        let mut app = App::new("testdata").unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
+        terminal
+            .draw(|frame| {
+                app.draw(frame).unwrap();
+            })
+            .unwrap();
+        assert_snapshot!(terminal.backend());
+    }
+
+    #[test]
+    fn test_search() {
+        let mut app = App::new("testdata").unwrap();
+        input(&mut app, "line");
+        let mut terminal = Terminal::new(TestBackend::new(40, 20)).unwrap();
+
+        // await results from 2 files
+        app.handle_events(true).unwrap();
+        app.handle_events(true).unwrap();
+
+        terminal
+            .draw(|frame| {
+                assert!(app.draw(frame).unwrap(), "Should need more results");
+            })
+            .unwrap();
+        assert_snapshot!(terminal.backend());
+    }
+
+    #[test]
+    // BUG: weird how these collapse, would expect full results until last one
+    // TODO: Show when results are truncated
+    fn test_search_results_full() {
+        let mut app = App::new("testdata").unwrap();
+        input(&mut app, "line");
+        // Use a smaller y size, so the results fill the page
+        let mut terminal = Terminal::new(TestBackend::new(40, 12)).unwrap();
+
+        // await results from 2 files
+        app.handle_events(true).unwrap();
+
+        terminal
+            .draw(|frame| {
+                assert!(app.draw(frame).unwrap(), "Should need more results");
+            })
+            .unwrap();
+
+        app.handle_events(true).unwrap();
+
+        terminal
+            .draw(|frame| {
+                assert!(!app.draw(frame).unwrap(), "Should not need more results");
+            })
+            .unwrap();
+        assert_snapshot!(terminal.backend());
+    }
+
+    #[test]
+    fn test_replace() {
+        let mut app = App::new("testdata").unwrap();
+        input(&mut app, "line");
+        app.handle_key_event(KeyCode::Tab.into()).unwrap();
+        input(&mut app, "replacement");
+        let mut terminal = Terminal::new(TestBackend::new(40, 20)).unwrap();
+
+        // await results from 2 files
+        app.handle_events(true).unwrap();
+        app.handle_events(true).unwrap();
+
+        terminal
+            .draw(|frame| {
+                assert!(app.draw(frame).unwrap(), "Should need more results");
+            })
+            .unwrap();
+        assert_snapshot!(terminal.backend());
     }
 }
