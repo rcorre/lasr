@@ -64,7 +64,6 @@ impl LineSubstitution {
 }
 
 pub struct App {
-    exit: bool,
     subs: Vec<FileSubstitution>,
     search_rx: Receiver<FileMatch>,
     event_rx: Receiver<Event>,
@@ -74,6 +73,12 @@ pub struct App {
     editing_pattern: bool,
     re: Option<Regex>,
     replacement: String,
+}
+
+enum State {
+    Continue,
+    Exit,
+    Confirm,
 }
 
 impl App {
@@ -103,7 +108,6 @@ impl App {
         });
 
         Ok(Self {
-            exit: false,
             pattern_input: LineInput::default(),
             replacement_input: LineInput::default(),
             search_rx,
@@ -116,13 +120,21 @@ impl App {
         })
     }
 
+    fn replace(&mut self) -> Result<()> {
+        // TODO
+        Ok(())
+    }
+
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
-        while !self.exit {
+        loop {
             let mut need_more = false;
             terminal.draw(|frame| need_more = self.draw(frame).unwrap())?;
-            self.handle_events(need_more)?;
+            match self.handle_events(need_more)? {
+                State::Continue => {}
+                State::Exit => return Ok(()),
+                State::Confirm => return self.replace(),
+            }
         }
-        Ok(())
     }
 
     // returns true if more results are needed
@@ -225,7 +237,7 @@ impl App {
     }
 
     /// updates the application's state based on user input
-    fn handle_events(&mut self, need_more: bool) -> Result<()> {
+    fn handle_events(&mut self, need_more: bool) -> Result<State> {
         trace!("Awaiting event");
 
         let search_rx = if need_more { &self.search_rx } else { &never() };
@@ -245,19 +257,19 @@ impl App {
                 self.on_finding(sub?)?;
             }
         }
-        Ok(())
+        Ok(State::Continue)
     }
 
-    fn handle_key_event(&mut self, key_event: KeyEvent) -> Result<()> {
+    fn handle_key_event(&mut self, key_event: KeyEvent) -> Result<State> {
         // these keys are handled regardless of whether we're editing the query
         match key_event.code {
             KeyCode::Esc => {
                 debug!("Exit requested");
-                self.exit = true;
+                return Ok(State::Exit);
             }
             KeyCode::Char('c') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
                 debug!("Exit requested");
-                self.exit = true;
+                return Ok(State::Exit);
             }
             KeyCode::Tab => {
                 self.editing_pattern = !self.editing_pattern;
@@ -267,8 +279,7 @@ impl App {
                 );
             }
             KeyCode::Enter => {
-                // self.editing_query = false;
-                // TODO
+                return Ok(State::Confirm);
             }
             _ => {}
         }
@@ -276,14 +287,14 @@ impl App {
         if self.editing_pattern {
             let Some(pattern) = self.pattern_input.handle_key_event(key_event) else {
                 debug!("Pattern unchanged");
-                return Ok(());
+                return Ok(State::Continue);
             };
             self.re = match Regex::new(pattern) {
                 Ok(re) => Some(re),
                 Err(err) => {
                     // Expected to happen as the user is typing, not an error
                     info!("Not a valid regex: '{pattern}': {err}");
-                    return Ok(());
+                    return Ok(State::Continue);
                 }
             };
             info!("New pattern: {pattern}");
@@ -294,13 +305,13 @@ impl App {
         } else {
             let Some(replacement) = self.replacement_input.handle_key_event(key_event) else {
                 debug!("Replacement unchanged");
-                return Ok(());
+                return Ok(State::Continue);
             };
             self.replacement = replacement.to_string();
             info!("New pattern: {replacement}");
         }
 
-        Ok(())
+        Ok(State::Continue)
     }
 }
 
