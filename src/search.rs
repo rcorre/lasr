@@ -8,17 +8,20 @@ use ignore::Walk;
 use std::path::PathBuf;
 use tracing::{debug, info, trace};
 
+#[derive(Debug, PartialEq)]
 pub struct LineMatch {
     pub number: u64,
     pub text: String,
 }
 
+#[derive(Debug, PartialEq)]
 pub struct FileMatch {
     pub path: PathBuf,
     pub lines: Vec<LineMatch>,
 }
 
-// rx sends the new pattern
+// rx sends the new pattern each time it changes
+// rx sends None to mean "no more searches, complete current search and send all results"
 pub fn search<F: Fn(FileMatch) -> Result<()>>(
     mut rx: Receiver<String>,
     path: PathBuf,
@@ -41,6 +44,8 @@ fn do_search<F: Fn(FileMatch) -> Result<()>>(
     path: &PathBuf,
     func: &F,
 ) -> Result<Option<String>> {
+    let mut ended = false;
+
     if pattern.trim().is_empty() {
         debug!("Nothing to search, awaiting non-empty pattern");
         return Ok(Some(rx.recv()?));
@@ -55,17 +60,19 @@ fn do_search<F: Fn(FileMatch) -> Result<()>>(
         .binary_detection(BinaryDetection::quit(0))
         .build();
     for path in Walk::new(path) {
-        match rx.try_recv() {
-            Ok(pattern) => {
-                debug!("New pattern, restarting search");
-                return Ok(Some(pattern));
-            }
-            Err(TryRecvError::Empty) => {
-                trace!("No new pattern, continuing search");
-            }
-            Err(TryRecvError::Disconnected) => {
-                debug!("No pattern, aborting search");
-                return Ok(None);
+        if !ended {
+            match rx.try_recv() {
+                Ok(pattern) => {
+                    debug!("New pattern, restarting search");
+                    return Ok(Some(pattern));
+                }
+                Err(TryRecvError::Empty) => {
+                    trace!("No new pattern, continuing search");
+                }
+                Err(TryRecvError::Disconnected) => {
+                    debug!("Completing search");
+                    ended = true;
+                }
             }
         }
         debug!("Searching  path {path:?}");
@@ -98,5 +105,76 @@ fn do_search<F: Fn(FileMatch) -> Result<()>>(
     }
 
     // Done with this search, block until we get a new pattern
-    Ok(Some(rx.recv()?))
+    if ended {
+        Ok(None)
+    } else {
+        Ok(Some(rx.recv()?))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crossbeam::channel::bounded;
+    use pretty_assertions::assert_eq;
+
+    use super::*;
+
+    #[test]
+    fn test_search() {
+        let (pattern_tx, pattern_rx) = bounded(0);
+        let (result_tx, result_rx) = bounded(0);
+
+        std::thread::spawn(move || {
+            search(pattern_rx, "testdata".into(), |res| {
+                result_tx.send(res).unwrap();
+                Ok(())
+            })
+            .unwrap()
+        });
+
+        pattern_tx.send("line".into()).unwrap();
+
+        let mut results = [result_rx.recv().unwrap(), result_rx.recv().unwrap()];
+        results.sort_by(|a, b| a.path.cmp(&b.path));
+
+        assert_eq!(
+            results,
+            [
+                FileMatch {
+                    path: "testdata/dir1/file2.txt".into(),
+                    lines: vec![
+                        LineMatch {
+                            number: 1,
+                            text: "The first line.\n".into(),
+                        },
+                        LineMatch {
+                            number: 2,
+                            text: "The second line.\n".into(),
+                        },
+                        LineMatch {
+                            number: 3,
+                            text: "The third line.\n".into(),
+                        },
+                    ],
+                },
+                FileMatch {
+                    path: "testdata/file1.txt".into(),
+                    lines: vec![
+                        LineMatch {
+                            number: 1,
+                            text: "This is line one.\n".into(),
+                        },
+                        LineMatch {
+                            number: 2,
+                            text: "This is line two.\n".into(),
+                        },
+                        LineMatch {
+                            number: 3,
+                            text: "This is line three.\n".into(),
+                        },
+                    ],
+                }
+            ]
+        );
+    }
 }
