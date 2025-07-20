@@ -3,7 +3,7 @@ use std::{ops::Range, path::PathBuf};
 use super::input::LineInput;
 use crate::search::{self, FileMatch};
 use anyhow::{Context, Result};
-use crossbeam::channel::{Receiver, Sender, bounded, never, select_biased, unbounded};
+use crossbeam::channel::{Receiver, RecvError, bounded, never, select_biased, unbounded};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{
     DefaultTerminal, Frame,
@@ -64,10 +64,10 @@ impl LineSubstitution {
 }
 
 pub struct App {
+    path: PathBuf,
     subs: Vec<FileSubstitution>,
-    search_rx: Receiver<FileMatch>,
+    search_rx: Option<Receiver<FileMatch>>,
     event_rx: Receiver<Event>,
-    pattern_tx: Sender<String>,
     pattern_input: LineInput,
     replacement_input: LineInput,
     editing_pattern: bool,
@@ -82,20 +82,24 @@ enum State {
 }
 
 impl App {
-    pub fn new(path: impl Into<PathBuf>) -> Result<Self> {
-        // Search is bounded, so the search thread will block once we have enough results
-        let (search_tx, search_rx) = bounded(1);
-        // Pattern is unbounded -- we can keep sending new patterns to the search thread
-        let (pattern_tx, pattern_rx) = unbounded();
-        let path = path.into();
+    fn start_search(&mut self) {
+        // blocking channel to pause the search when we aren't ready for more results
+        let (tx, rx) = bounded(0);
+        let pattern = self.pattern_input.pattern().to_string();
+        let path = self.path.clone();
+        self.search_rx.replace(rx);
         std::thread::spawn(move || -> Result<()> {
-            search::search(pattern_rx, path, |finding| {
-                search_tx.send(finding)?;
+            search::search(pattern, path, |finding| {
+                tx.send(finding)?;
                 Ok(())
             })
             .context("Search thread exited")?;
             Ok(())
         });
+    }
+
+    pub fn new(path: impl Into<PathBuf>) -> Result<Self> {
+        let path = path.into();
 
         // Events are bounded, don't need to read more than one at once
         let (event_tx, event_rx) = unbounded();
@@ -108,12 +112,12 @@ impl App {
         });
 
         Ok(Self {
+            path,
             pattern_input: LineInput::default(),
             replacement_input: LineInput::default(),
-            search_rx,
+            search_rx: None,
             event_rx,
             subs: vec![],
-            pattern_tx,
             editing_pattern: true,
             re: None,
             replacement: "".to_string(),
@@ -240,7 +244,10 @@ impl App {
     fn handle_events(&mut self, need_more: bool) -> Result<State> {
         trace!("Awaiting event");
 
-        let search_rx = if need_more { &self.search_rx } else { &never() };
+        let search_rx = match self.search_rx {
+            Some(ref rx) if need_more => rx,
+            _ => &never(),
+        };
 
         // Bias for events, as they may invalidate search results
         select_biased! {
@@ -248,13 +255,19 @@ impl App {
                 debug!("Handling terminal event: {ev:?}");
                 match ev? {
                     Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                        self.handle_key_event(key_event)?;
+                        return self.handle_key_event(key_event);
                     }
                     _ => {}
                 };
             }
             recv(search_rx) -> sub => {
-                self.on_finding(sub?)?;
+                match sub {
+                    Ok(sub) => self.on_finding(sub)?,
+                    Err(RecvError) => {
+                        debug!("Search complete");
+                        self.search_rx = None;
+                    }
+                }
             }
         }
         Ok(State::Continue)
@@ -298,9 +311,7 @@ impl App {
                 }
             };
             info!("New pattern: {pattern}");
-            self.pattern_tx.send(pattern.to_string())?;
-            // Drain obsolete results
-            while self.search_rx.try_recv().is_ok() {}
+            self.start_search();
             self.subs.clear();
         } else {
             let Some(replacement) = self.replacement_input.handle_key_event(key_event) else {
@@ -329,6 +340,7 @@ mod tests {
     }
 
     #[test]
+    #[tracing_test::traced_test]
     fn test_empty() {
         let mut app = App::new("testdata").unwrap();
         let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
@@ -341,6 +353,7 @@ mod tests {
     }
 
     #[test]
+    #[tracing_test::traced_test]
     fn test_search() {
         let mut app = App::new("testdata").unwrap();
         input(&mut app, "line");
@@ -359,6 +372,7 @@ mod tests {
     }
 
     #[test]
+    #[tracing_test::traced_test]
     // BUG: weird how these collapse, would expect full results until last one
     // TODO: Show when results are truncated
     fn test_search_results_full() {
@@ -387,6 +401,7 @@ mod tests {
     }
 
     #[test]
+    #[tracing_test::traced_test]
     fn test_replace() {
         let mut app = App::new("testdata").unwrap();
         input(&mut app, "line");

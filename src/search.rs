@@ -1,12 +1,11 @@
 use anyhow::{Context, Result};
-use crossbeam::channel::{Receiver, TryRecvError};
 use grep::{
     regex::RegexMatcherBuilder,
     searcher::{BinaryDetection, SearcherBuilder, sinks},
 };
 use ignore::Walk;
 use std::path::PathBuf;
-use tracing::{debug, info, trace};
+use tracing::debug;
 
 #[derive(Debug, PartialEq)]
 pub struct LineMatch {
@@ -20,36 +19,12 @@ pub struct FileMatch {
     pub lines: Vec<LineMatch>,
 }
 
-// rx sends the new pattern each time it changes
-// rx sends None to mean "no more searches, complete current search and send all results"
 pub fn search<F: Fn(FileMatch) -> Result<()>>(
-    mut rx: Receiver<String>,
+    pattern: String,
     path: PathBuf,
     func: F,
 ) -> Result<()> {
-    let mut pattern = Some(rx.recv()?);
-
-    while let Some(p) = pattern {
-        debug!("Starting search with pattern: '{p}'");
-        pattern = do_search(p, &mut rx, &path, &func)?;
-    }
-
-    info!("Ending search");
-    Ok(())
-}
-
-fn do_search<F: Fn(FileMatch) -> Result<()>>(
-    pattern: String,
-    rx: &mut Receiver<String>,
-    path: &PathBuf,
-    func: &F,
-) -> Result<Option<String>> {
-    let mut ended = false;
-
-    if pattern.trim().is_empty() {
-        debug!("Nothing to search, awaiting non-empty pattern");
-        return Ok(Some(rx.recv()?));
-    }
+    debug!("Starting search with pattern: '{pattern}'");
 
     let matcher = RegexMatcherBuilder::new()
         .case_smart(true)
@@ -60,21 +35,6 @@ fn do_search<F: Fn(FileMatch) -> Result<()>>(
         .binary_detection(BinaryDetection::quit(0))
         .build();
     for path in Walk::new(path) {
-        if !ended {
-            match rx.try_recv() {
-                Ok(pattern) => {
-                    debug!("New pattern, restarting search");
-                    return Ok(Some(pattern));
-                }
-                Err(TryRecvError::Empty) => {
-                    trace!("No new pattern, continuing search");
-                }
-                Err(TryRecvError::Disconnected) => {
-                    debug!("Completing search");
-                    ended = true;
-                }
-            }
-        }
         debug!("Searching  path {path:?}");
         let path = path?;
         let meta = path.metadata()?;
@@ -104,37 +64,28 @@ fn do_search<F: Fn(FileMatch) -> Result<()>>(
         }
     }
 
-    // Done with this search, block until we get a new pattern
-    if ended {
-        Ok(None)
-    } else {
-        Ok(Some(rx.recv()?))
-    }
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use crossbeam::channel::bounded;
+    use crossbeam::channel::{RecvError, unbounded};
     use pretty_assertions::assert_eq;
 
     use super::*;
 
     #[test]
+    #[tracing_test::traced_test]
     fn test_search() {
-        let (pattern_tx, pattern_rx) = bounded(0);
-        let (result_tx, result_rx) = bounded(0);
+        let (tx, rx) = unbounded();
 
-        std::thread::spawn(move || {
-            search(pattern_rx, "testdata".into(), |res| {
-                result_tx.send(res).unwrap();
-                Ok(())
-            })
-            .unwrap()
-        });
+        search("line".into(), "testdata".into(), |res| {
+            tx.send(res).unwrap();
+            Ok(())
+        })
+        .unwrap();
 
-        pattern_tx.send("line".into()).unwrap();
-
-        let mut results = [result_rx.recv().unwrap(), result_rx.recv().unwrap()];
+        let mut results = [rx.recv().unwrap(), rx.recv().unwrap()];
         results.sort_by(|a, b| a.path.cmp(&b.path));
 
         assert_eq!(
@@ -176,5 +127,7 @@ mod tests {
                 }
             ]
         );
+
+        assert_eq!(rx.recv(), Err(RecvError));
     }
 }
