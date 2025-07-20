@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use crossbeam::channel::Sender;
 use grep::{
     regex::RegexMatcherBuilder,
     searcher::{BinaryDetection, SearcherBuilder, sinks},
@@ -19,11 +20,7 @@ pub struct FileMatch {
     pub lines: Vec<LineMatch>,
 }
 
-pub fn search<F: Fn(FileMatch) -> Result<()>>(
-    pattern: String,
-    path: PathBuf,
-    func: F,
-) -> Result<()> {
+pub fn search(pattern: String, path: PathBuf, tx: Sender<FileMatch>) -> Result<()> {
     debug!("Starting search with pattern: '{pattern}'");
 
     let matcher = RegexMatcherBuilder::new()
@@ -55,11 +52,16 @@ pub fn search<F: Fn(FileMatch) -> Result<()>>(
                 debug!("Failed to search {path:?}: {e:?}");
                 continue;
             };
-            if !lines.is_empty() {
-                func(FileMatch {
-                    path: path.into_path(),
-                    lines,
-                })?;
+            if !lines.is_empty()
+                && tx
+                    .send(FileMatch {
+                        path: path.into_path(),
+                        lines,
+                    })
+                    .is_err()
+            {
+                debug!("TX closed, ending search thread");
+                return Ok(());
             }
         }
     }
@@ -79,11 +81,7 @@ mod tests {
     fn test_search() {
         let (tx, rx) = unbounded();
 
-        search("line".into(), "testdata".into(), |res| {
-            tx.send(res).unwrap();
-            Ok(())
-        })
-        .unwrap();
+        search("line".into(), "testdata".into(), tx).unwrap();
 
         let mut results = [rx.recv().unwrap(), rx.recv().unwrap()];
         results.sort_by(|a, b| a.path.cmp(&b.path));

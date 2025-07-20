@@ -89,12 +89,7 @@ impl App {
         let path = self.path.clone();
         self.search_rx.replace(rx);
         std::thread::spawn(move || -> Result<()> {
-            search::search(pattern, path, |finding| {
-                tx.send(finding)?;
-                Ok(())
-            })
-            .context("Search thread exited")?;
-            Ok(())
+            search::search(pattern, path, tx).context("Search thread error")
         });
     }
 
@@ -208,6 +203,7 @@ impl App {
             frame.render_stateful_widget(table, *area, &mut table_state);
         }
 
+        trace!("Draw complete");
         Ok(size_left > 0)
     }
 
