@@ -119,8 +119,36 @@ impl App {
         })
     }
 
-    fn replace(&mut self) -> Result<()> {
-        // TODO
+    fn replace_all(&self) -> Result<()> {
+        let Some(ref re) = self.re else {
+            debug!("No replacement");
+            return Ok(());
+        };
+
+        debug!("Replacing in cached results");
+        for sub in &self.subs {
+            let path = &sub.path;
+            debug!("Replacing in {path:?}");
+            let text = std::fs::read_to_string(path)?;
+            let text = re.replace_all(&text, &self.replacement);
+            std::fs::write(path, text.as_ref())?;
+        }
+
+        let Some(ref rx) = self.search_rx else {
+            debug!("No pending search results, replacement complete");
+            return Ok(());
+        };
+
+        debug!("Draining remaining results");
+        for finding in rx {
+            let path = &finding.path;
+            debug!("Replacing in {path:?}");
+            let text = std::fs::read_to_string(path)?;
+            let text = re.replace_all(&text, &self.replacement);
+            std::fs::write(path, text.as_ref())?;
+        }
+
+        debug!("Replacement complete");
         Ok(())
     }
 
@@ -131,7 +159,7 @@ impl App {
             match self.handle_events(need_more)? {
                 State::Continue => {}
                 State::Exit => return Ok(()),
-                State::Confirm => return self.replace(),
+                State::Confirm => return self.replace_all(),
             }
         }
     }
