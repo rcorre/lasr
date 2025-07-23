@@ -355,6 +355,7 @@ mod tests {
     use super::App;
     use crossterm::event::KeyCode;
     use insta::assert_snapshot;
+    use pretty_assertions::assert_eq;
     use ratatui::{Terminal, backend::TestBackend};
 
     fn input(app: &mut App, s: &str) {
@@ -405,7 +406,6 @@ mod tests {
         // Use a smaller y size, so the results fill the page
         let mut terminal = Terminal::new(TestBackend::new(40, 12)).unwrap();
 
-        // await results from 2 files
         app.handle_events(true).unwrap();
 
         terminal
@@ -427,21 +427,49 @@ mod tests {
     #[test]
     #[tracing_test::traced_test]
     fn test_replace() {
-        let mut app = App::new("testdata").unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        for entry in ignore::Walk::new("testdata") {
+            let entry = entry.unwrap();
+            let src = entry.path();
+            let dst = tmp.path().join(src.strip_prefix("testdata").unwrap());
+            tracing::debug!("Test copying {src:?} to {dst:?}");
+
+            let meta = entry.metadata().unwrap();
+            if meta.is_file() {
+                std::fs::create_dir_all(dst.parent().unwrap()).unwrap();
+                std::fs::copy(src, dst).unwrap();
+            }
+        }
+
+        let mut app = App::new(tmp.path().to_path_buf()).unwrap();
         input(&mut app, "line");
         app.handle_key_event(KeyCode::Tab.into()).unwrap();
         input(&mut app, "replacement");
-        let mut terminal = Terminal::new(TestBackend::new(40, 20)).unwrap();
 
         // await results from 2 files
         app.handle_events(true).unwrap();
         app.handle_events(true).unwrap();
 
-        terminal
-            .draw(|frame| {
-                assert!(app.draw(frame).unwrap(), "Should need more results");
-            })
-            .unwrap();
-        assert_snapshot!(terminal.backend());
+        app.replace_all().unwrap();
+
+        let content = std::fs::read_to_string(tmp.path().join("file1.txt")).unwrap();
+        assert_eq!(
+            content,
+            "\
+This is replacement one.
+This is replacement two.
+This is replacement three.
+"
+        );
+
+        let content = std::fs::read_to_string(tmp.path().join("dir1").join("file2.txt")).unwrap();
+        assert_eq!(
+            content,
+            "\
+The first replacement.
+The second replacement.
+The third replacement.
+"
+        );
     }
 }

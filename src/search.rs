@@ -4,7 +4,6 @@ use grep::{
     regex::RegexMatcherBuilder,
     searcher::{BinaryDetection, SearcherBuilder, sinks},
 };
-use ignore::Walk;
 use std::path::PathBuf;
 use tracing::debug;
 
@@ -31,7 +30,7 @@ pub fn search(pattern: String, path: PathBuf, tx: Sender<FileMatch>) -> Result<(
     let mut searcher = SearcherBuilder::new()
         .binary_detection(BinaryDetection::quit(0))
         .build();
-    for path in Walk::new(path) {
+    for path in ignore::Walk::new(path) {
         debug!("Searching  path {path:?}");
         let path = path?;
         let meta = path.metadata()?;
