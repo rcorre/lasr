@@ -71,6 +71,7 @@ pub struct App {
     pattern_input: LineInput,
     replacement_input: LineInput,
     editing_pattern: bool,
+    // TODO: respect casing
     re: Option<Regex>,
     replacement: String,
 }

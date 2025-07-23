@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use anyhow::Result;
 use clap::Parser;
 use lasr::tui::App;
@@ -7,7 +9,10 @@ use tracing_subscriber::{Layer as _, layer::SubscriberExt as _, util::Subscriber
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 #[command(propagate_version = true)]
-pub struct Cli {}
+pub struct Cli {
+    /// Path to search, defaults to "."
+    path: Option<PathBuf>,
+}
 
 pub fn initialize_logging() -> Result<()> {
     let xdg_dirs = xdg::BaseDirectories::with_prefix(env!("CARGO_PKG_NAME"));
@@ -37,7 +42,7 @@ fn main() -> Result<()> {
         std::io::stdout(),
         crossterm::cursor::SetCursorStyle::BlinkingBar
     )?;
-    App::new(std::env::current_dir()?)?.run(&mut terminal)?;
+    App::new(cli.path.unwrap_or(".".into()))?.run(&mut terminal)?;
     ratatui::restore();
     Ok(())
 }
