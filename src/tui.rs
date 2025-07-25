@@ -8,7 +8,7 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{
     DefaultTerminal, Frame,
     layout::{Constraint, Direction, Layout, Position},
-    style::Style,
+    style::{Style, Stylize},
     text::{Line, Span},
     widgets::{Block, Paragraph, Row, Table, TableState},
 };
@@ -42,7 +42,9 @@ impl LineSubstitution {
             // Add the match with a red background
             line.push_span(Span::styled(
                 &self.text[range.clone()],
-                Style::default().bg(ratatui::style::Color::Red),
+                Style::default()
+                    .bg(ratatui::style::Color::LightRed)
+                    .crossed_out(),
             ));
 
             let replaced = &self.text[range.clone()];
@@ -50,7 +52,7 @@ impl LineSubstitution {
             // Add the replacement with a green background
             line.push_span(Span::styled(
                 replaced,
-                Style::default().bg(ratatui::style::Color::Green),
+                Style::default().bg(ratatui::style::Color::LightGreen),
             ));
 
             last_end = range.end;
