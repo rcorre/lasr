@@ -29,7 +29,7 @@ struct FileSubstitution {
 }
 
 impl LineSubstitution {
-    fn to_line<'a>(&'a self, replacement: &'a str) -> Line<'a> {
+    fn to_line<'a>(&'a self, re: &'a Regex, replacement: &'a str) -> Line<'a> {
         let mut line = Line::default();
         let mut last_end = 0;
 
@@ -45,9 +45,11 @@ impl LineSubstitution {
                 Style::default().bg(ratatui::style::Color::Red),
             ));
 
+            let replaced = &self.text[range.clone()];
+            let replaced = re.replace_all(replaced, replacement);
             // Add the replacement with a green background
             line.push_span(Span::styled(
-                replacement,
+                replaced,
                 Style::default().bg(ratatui::style::Color::Green),
             ));
 
@@ -215,14 +217,16 @@ impl App {
             .map(Constraint::Length)
             .collect();
 
+        let Some(ref re) = self.re else {
+            return Ok(false);
+        };
         let search_areas = Layout::vertical(constraints.as_slice()).split(search_area);
-
         for (area, sub) in search_areas.iter().zip(self.subs.iter()) {
             let table = Table::new(
                 sub.subs.iter().map(|s| {
                     Row::new(vec![
                         Line::raw(s.line_number.to_string()),
-                        s.to_line(&self.replacement),
+                        s.to_line(re, &self.replacement),
                     ])
                 }),
                 &[Constraint::Max(6), Constraint::Fill(1)],
@@ -451,6 +455,14 @@ mod tests {
         app.handle_events(true).unwrap();
         app.handle_events(true).unwrap();
 
+        let mut terminal = Terminal::new(TestBackend::new(40, 20)).unwrap();
+        terminal
+            .draw(|frame| {
+                assert!(app.draw(frame).unwrap(), "Should need more results");
+            })
+            .unwrap();
+        assert_snapshot!(terminal.backend());
+
         app.replace_all().unwrap();
 
         let content = std::fs::read_to_string(tmp.path().join("file1.txt")).unwrap();
@@ -470,6 +482,63 @@ This is replacement three.
 The first replacement.
 The second replacement.
 The third replacement.
+"
+        );
+    }
+
+    #[test]
+    #[tracing_test::traced_test]
+    fn test_replace_capture() {
+        let tmp = tempfile::tempdir().unwrap();
+        for entry in ignore::Walk::new("testdata") {
+            let entry = entry.unwrap();
+            let src = entry.path();
+            let dst = tmp.path().join(src.strip_prefix("testdata").unwrap());
+            tracing::debug!("Test copying {src:?} to {dst:?}");
+
+            let meta = entry.metadata().unwrap();
+            if meta.is_file() {
+                std::fs::create_dir_all(dst.parent().unwrap()).unwrap();
+                std::fs::copy(src, dst).unwrap();
+            }
+        }
+
+        let mut app = App::new(tmp.path().to_path_buf()).unwrap();
+        input(&mut app, "This is");
+        app.handle_key_event(KeyCode::Tab.into()).unwrap();
+        input(&mut app, "${0}n't");
+
+        // await results from 2 files
+        app.handle_events(true).unwrap();
+        app.handle_events(true).unwrap();
+
+        let mut terminal = Terminal::new(TestBackend::new(40, 20)).unwrap();
+        terminal
+            .draw(|frame| {
+                assert!(app.draw(frame).unwrap(), "Should need more results");
+            })
+            .unwrap();
+        assert_snapshot!(terminal.backend());
+
+        app.replace_all().unwrap();
+
+        let content = std::fs::read_to_string(tmp.path().join("file1.txt")).unwrap();
+        assert_eq!(
+            content,
+            "\
+This isn't line one.
+This isn't line two.
+This isn't line three.
+"
+        );
+
+        let content = std::fs::read_to_string(tmp.path().join("dir1").join("file2.txt")).unwrap();
+        assert_eq!(
+            content,
+            "\
+The first line.
+The second line.
+The third line.
 "
         );
     }

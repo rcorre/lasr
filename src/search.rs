@@ -23,7 +23,6 @@ pub fn search(pattern: String, path: PathBuf, tx: Sender<FileMatch>) -> Result<(
     debug!("Starting search with pattern: '{pattern}'");
 
     let matcher = RegexMatcherBuilder::new()
-        .case_smart(true)
         .line_terminator(Some(b'\n'))
         .build(&pattern)
         .with_context(|| format!("Failed to compile searcher with pattern: {pattern}"))?;
