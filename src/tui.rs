@@ -231,7 +231,14 @@ impl App {
                 }),
                 &[Constraint::Max(6), Constraint::Fill(1)],
             )
-            .block(Block::bordered().title_top(sub.path.to_string_lossy()));
+            .block(
+                Block::bordered().title_top(
+                    sub.path
+                        .strip_prefix(&self.path)
+                        .unwrap_or(&sub.path)
+                        .to_string_lossy(),
+                ),
+            );
             let mut table_state = TableState::default();
             frame.render_stateful_widget(table, *area, &mut table_state);
         }

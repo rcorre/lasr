@@ -6,7 +6,7 @@ expression: terminal.backend()
 " ┌Search─────┐         ┌Replace───────┐ "
 " │This is    │ < TAB > │${0}n't       │ "
 " └───────────┘         └──────────────┘ "
-" ┌/tmp/.tmpdQ2ZiP/file1.txt───────────┐ "
+" ┌file1.txt───────────────────────────┐ "
 " │1      This isThis isn't line one.  │ "
 " │2      This isThis isn't line two.  │ "
 " │3      This isThis isn't line three.│ "
