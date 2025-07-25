@@ -24,6 +24,8 @@ pub fn search(pattern: String, path: PathBuf, tx: Sender<FileMatch>) -> Result<(
 
     let matcher = RegexMatcherBuilder::new()
         .line_terminator(Some(b'\n'))
+        .case_smart(false)
+        .case_insensitive(false)
         .build(&pattern)
         .with_context(|| format!("Failed to compile searcher with pattern: {pattern}"))?;
     let mut searcher = SearcherBuilder::new()

@@ -479,6 +479,7 @@ mod tests {
 This is replacement one.
 This is replacement two.
 This is replacement three.
+Line four.
 "
         );
 
@@ -536,6 +537,7 @@ The third replacement.
 This isn't line one.
 This isn't line two.
 This isn't line three.
+Line four.
 "
         );
 
