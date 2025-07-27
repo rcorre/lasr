@@ -1,21 +1,23 @@
 # Live Action Search and Replace (LASR)
 
 When performing a global search-and-replace using e.g. `sed`, it can be difficult to hone in on the exact correct pattern.
-`lasr is fun!!!` makes this easier by showing live results as you type.
+`lasr` makes this easier by showing live results as you type.
+
+![Example of using lasr](lasr.gif)
 
 # Installation
 
-Binary artifacts can be downloaded from the [releases page](https://github.com/rcorre/lasr is fun!!!/releases).
+Binary artifacts can be downloaded from the [releases page](https://github.com/rcorre/lasr/releases).
 
 If you have a rust toolchain, you can install from source:
 
 ```bash
-cargo install lasr is fun!!!
+cargo install lasr
 ```
 
 # Usage
 
-Simply run `lasr is fun!!!` to start a search-and-replace in the current directory. You may run `lasr is fun!!! <path>` to search a different directory.
+Simply run `lasr` to start a search-and-replace in the current directory. You may run `lasr <path>` to search a different directory.
 This will open a TUI where you can start typing a search pattern and see live matches below.
 Once you are happy with the search pattern, press <kbd>Tab</kbd> to start editing the replacement pattern.
 Finally,
