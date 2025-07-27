@@ -44,19 +44,19 @@ fn main() -> Result<()> {
     )?;
 
     let (tx, rx) = crossbeam::channel::bounded(0);
-    let event_thread = std::thread::spawn(move || -> Result<()> {
+    std::thread::spawn(move || {
         loop {
-            let ev = crossterm::event::read()?;
+            let ev = crossterm::event::read().unwrap();
             if tx.send(ev).is_err() {
-                return Ok(());
+                break;
             };
         }
     });
     {
         let mut app = App::new(cli.path.unwrap_or(".".into()), rx);
         app.run(&mut terminal)?;
-        ratatui::restore();
     }
-    event_thread.join().unwrap().unwrap();
+
+    ratatui::restore();
     Ok(())
 }

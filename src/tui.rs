@@ -3,7 +3,7 @@ use std::{ops::Range, path::PathBuf};
 use super::input::LineInput;
 use crate::search::{self, FileMatch};
 use anyhow::{Context, Result};
-use crossbeam::channel::{Receiver, RecvError, bounded, never, select_biased, unbounded};
+use crossbeam::channel::{Receiver, RecvError, bounded, never, select_biased};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{
     DefaultTerminal, Frame,
@@ -13,7 +13,7 @@ use ratatui::{
     widgets::{Block, Paragraph, Row, Table, TableState},
 };
 use regex::Regex;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, info, trace, warn};
 
 #[derive(Debug)]
 struct LineSubstitution {
