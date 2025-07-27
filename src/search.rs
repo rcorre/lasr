@@ -31,7 +31,10 @@ pub fn search(pattern: String, path: PathBuf, tx: Sender<FileMatch>) -> Result<(
     let mut searcher = SearcherBuilder::new()
         .binary_detection(BinaryDetection::quit(0))
         .build();
-    for path in ignore::Walk::new(path) {
+    let walk = ignore::WalkBuilder::new(path)
+        .sort_by_file_name(|a, b| a.cmp(b))
+        .build();
+    for path in walk {
         debug!("Searching  path {path:?}");
         let path = path?;
         let meta = path.metadata()?;
