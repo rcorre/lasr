@@ -13,7 +13,7 @@ use ratatui::{
     widgets::{Block, Paragraph, Row, Table, TableState},
 };
 use regex::Regex;
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 
 #[derive(Debug)]
 struct LineSubstitution {
@@ -103,11 +103,21 @@ impl App {
 
         // Events are bounded, don't need to read more than one at once
         let (event_tx, event_rx) = unbounded();
-        std::thread::spawn(move || -> Result<()> {
+        std::thread::spawn(move || {
             loop {
-                let ev = crossterm::event::read()?;
-                trace!("Sending terminal event {ev:?}");
-                event_tx.send(ev)?;
+                match crossterm::event::read() {
+                    Ok(ev) => {
+                        trace!("Sending terminal event {ev:?}");
+                        if event_tx.send(ev).is_err() {
+                            info!("Sender closed, event thread exiting");
+                            return;
+                        }
+                    }
+                    Err(err) => {
+                        error!("Failed to read terminal event: {err}");
+                        return;
+                    }
+                }
             }
         });
 
