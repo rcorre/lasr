@@ -51,6 +51,7 @@ impl LineInput {
                     return None;
                 };
                 self.cursor_pos -= 1;
+                // BUG: Doesn't handle unicode
                 let c = self.pattern.remove(self.cursor_pos);
                 tracing::debug!("Removed '{c}' from pattern, new pattern: {}", self.pattern);
                 Some(&self.pattern)
