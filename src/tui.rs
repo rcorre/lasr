@@ -98,30 +98,10 @@ impl App {
         });
     }
 
-    pub fn new(path: impl Into<PathBuf>) -> Result<Self> {
+    pub fn new(path: impl Into<PathBuf>, event_rx: Receiver<Event>) -> Self {
         let path = path.into();
 
-        // Events are bounded, don't need to read more than one at once
-        let (event_tx, event_rx) = unbounded();
-        std::thread::spawn(move || {
-            loop {
-                match crossterm::event::read() {
-                    Ok(ev) => {
-                        trace!("Sending terminal event {ev:?}");
-                        if event_tx.send(ev).is_err() {
-                            info!("Sender closed, event thread exiting");
-                            return;
-                        }
-                    }
-                    Err(err) => {
-                        error!("Failed to read terminal event: {err}");
-                        return;
-                    }
-                }
-            }
-        });
-
-        Ok(Self {
+        Self {
             path,
             pattern_input: LineInput::default(),
             replacement_input: LineInput::default(),
@@ -131,7 +111,7 @@ impl App {
             editing_pattern: true,
             re: None,
             replacement: "".to_string(),
-        })
+        }
     }
 
     fn replace_all(&self) -> Result<()> {
@@ -376,26 +356,51 @@ impl App {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::App;
-    use crossterm::event::KeyCode;
+    use crossbeam::channel::{Sender, bounded};
+    use crossterm::event::{Event, KeyCode};
     use insta::assert_snapshot;
     use pretty_assertions::assert_eq;
     use ratatui::{Terminal, backend::TestBackend};
 
-    fn input(app: &mut App, s: &str) {
-        for c in s.chars() {
-            app.handle_key_event(KeyCode::Char(c).into()).unwrap();
+    struct Test {
+        app: App,
+        event_tx: Sender<Event>,
+    }
+
+    impl Test {
+        fn new() -> Self {
+            Self::with_dir(Path::new("testdata"))
+        }
+
+        fn with_dir(path: &Path) -> Self {
+            let (event_tx, event_rx) = bounded(1);
+            Test {
+                app: App::new(path, event_rx),
+                event_tx,
+            }
+        }
+
+        fn input(&mut self, s: &str) {
+            for c in s.chars() {
+                self.event_tx
+                    .send(Event::Key(KeyCode::Char(c).into()))
+                    .unwrap();
+                self.app.handle_events(true).unwrap();
+            }
         }
     }
 
     #[test]
     #[tracing_test::traced_test]
     fn test_empty() {
-        let mut app = App::new("testdata").unwrap();
+        let mut test = Test::new();
         let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
         terminal
             .draw(|frame| {
-                app.draw(frame).unwrap();
+                test.app.draw(frame).unwrap();
             })
             .unwrap();
         assert_snapshot!(terminal.backend());
@@ -404,17 +409,17 @@ mod tests {
     #[test]
     #[tracing_test::traced_test]
     fn test_search() {
-        let mut app = App::new("testdata").unwrap();
-        input(&mut app, "line");
-        let mut terminal = Terminal::new(TestBackend::new(40, 20)).unwrap();
+        let mut test = Test::new();
+        test.input("line");
 
         // await results from 2 files
-        app.handle_events(true).unwrap();
-        app.handle_events(true).unwrap();
+        test.app.handle_events(true).unwrap();
+        test.app.handle_events(true).unwrap();
 
+        let mut terminal = Terminal::new(TestBackend::new(40, 20)).unwrap();
         terminal
             .draw(|frame| {
-                assert!(app.draw(frame).unwrap(), "Should need more results");
+                assert!(test.app.draw(frame).unwrap(), "Should need more results");
             })
             .unwrap();
         assert_snapshot!(terminal.backend());
@@ -425,24 +430,27 @@ mod tests {
     // BUG: weird how these collapse, would expect full results until last one
     // TODO: Show when results are truncated
     fn test_search_results_full() {
-        let mut app = App::new("testdata").unwrap();
-        input(&mut app, "line");
+        let mut test = Test::new();
+        test.input("line");
         // Use a smaller y size, so the results fill the page
         let mut terminal = Terminal::new(TestBackend::new(40, 12)).unwrap();
 
-        app.handle_events(true).unwrap();
+        test.app.handle_events(true).unwrap();
 
         terminal
             .draw(|frame| {
-                assert!(app.draw(frame).unwrap(), "Should need more results");
+                assert!(test.app.draw(frame).unwrap(), "Should need more results");
             })
             .unwrap();
 
-        app.handle_events(true).unwrap();
+        test.app.handle_events(true).unwrap();
 
         terminal
             .draw(|frame| {
-                assert!(!app.draw(frame).unwrap(), "Should not need more results");
+                assert!(
+                    !test.app.draw(frame).unwrap(),
+                    "Should not need more results"
+                );
             })
             .unwrap();
         assert_snapshot!(terminal.backend());
@@ -465,24 +473,24 @@ mod tests {
             }
         }
 
-        let mut app = App::new(tmp.path().to_path_buf()).unwrap();
-        input(&mut app, "line");
-        app.handle_key_event(KeyCode::Tab.into()).unwrap();
-        input(&mut app, "replacement");
+        let mut test = Test::with_dir(tmp.path());
+        test.input("line");
+        test.app.handle_key_event(KeyCode::Tab.into()).unwrap();
+        test.input("replacement");
 
         // await results from 2 files
-        app.handle_events(true).unwrap();
-        app.handle_events(true).unwrap();
+        test.app.handle_events(true).unwrap();
+        test.app.handle_events(true).unwrap();
 
         let mut terminal = Terminal::new(TestBackend::new(40, 20)).unwrap();
         terminal
             .draw(|frame| {
-                assert!(app.draw(frame).unwrap(), "Should need more results");
+                assert!(test.app.draw(frame).unwrap(), "Should need more results");
             })
             .unwrap();
         assert_snapshot!(terminal.backend());
 
-        app.replace_all().unwrap();
+        test.app.replace_all().unwrap();
 
         let content = std::fs::read_to_string(tmp.path().join("file1.txt")).unwrap();
         assert_eq!(
@@ -523,24 +531,24 @@ The third replacement.
             }
         }
 
-        let mut app = App::new(tmp.path().to_path_buf()).unwrap();
-        input(&mut app, "This is");
-        app.handle_key_event(KeyCode::Tab.into()).unwrap();
-        input(&mut app, "${0}n't");
+        let mut test = Test::with_dir(tmp.path());
+        test.input("This is");
+        test.app.handle_key_event(KeyCode::Tab.into()).unwrap();
+        test.input("${0}n't");
 
         // await results from 2 files
-        app.handle_events(true).unwrap();
-        app.handle_events(true).unwrap();
+        test.app.handle_events(true).unwrap();
+        test.app.handle_events(true).unwrap();
 
         let mut terminal = Terminal::new(TestBackend::new(40, 20)).unwrap();
         terminal
             .draw(|frame| {
-                assert!(app.draw(frame).unwrap(), "Should need more results");
+                assert!(test.app.draw(frame).unwrap(), "Should need more results");
             })
             .unwrap();
         assert_snapshot!(terminal.backend());
 
-        app.replace_all().unwrap();
+        test.app.replace_all().unwrap();
 
         let content = std::fs::read_to_string(tmp.path().join("file1.txt")).unwrap();
         assert_eq!(

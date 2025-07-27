@@ -42,7 +42,21 @@ fn main() -> Result<()> {
         std::io::stdout(),
         crossterm::cursor::SetCursorStyle::BlinkingBar
     )?;
-    App::new(cli.path.unwrap_or(".".into()))?.run(&mut terminal)?;
-    ratatui::restore();
+
+    let (tx, rx) = crossbeam::channel::bounded(0);
+    let event_thread = std::thread::spawn(move || -> Result<()> {
+        loop {
+            let ev = crossterm::event::read()?;
+            if tx.send(ev).is_err() {
+                return Ok(());
+            };
+        }
+    });
+    {
+        let mut app = App::new(cli.path.unwrap_or(".".into()), rx);
+        app.run(&mut terminal)?;
+        ratatui::restore();
+    }
+    event_thread.join().unwrap().unwrap();
     Ok(())
 }
