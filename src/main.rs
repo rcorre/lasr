@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::Parser;
+use etcetera::{AppStrategy, choose_app_strategy};
 use lasr::tui::App;
 use tracing_error::ErrorLayer;
 use tracing_subscriber::{Layer as _, layer::SubscriberExt as _, util::SubscriberInitExt as _};
@@ -15,8 +16,13 @@ pub struct Cli {
 }
 
 pub fn initialize_logging() -> Result<()> {
-    let xdg_dirs = xdg::BaseDirectories::with_prefix(env!("CARGO_PKG_NAME"));
-    let log_path = xdg_dirs.place_cache_file("log.txt")?;
+    let strategy = choose_app_strategy(etcetera::AppStrategyArgs {
+        app_name: env!("CARGO_PKG_NAME").to_string(),
+        author: "rrc".to_string(),
+        top_level_domain: "codes".to_string(),
+    })?;
+    let cache_dir = strategy.cache_dir();
+    let log_path = cache_dir.join("log.txt");
     let log_file = std::fs::File::create(log_path)?;
     let file_subscriber = tracing_subscriber::fmt::layer()
         .with_file(true)

@@ -17,11 +17,11 @@ futures = "0.3.31"
 tracing-error = "0.2.1"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
-xdg = "3.0.0"
 regex = "1.11.1"
 crossbeam = "0.8.4"
 grep = "0.3.2"
 ignore = "0.4.23"
+etcetera = "0.10.0"
 
 [dev-dependencies]
 insta = "1.43.1"
