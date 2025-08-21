@@ -35,6 +35,10 @@ The following replacements are available:
 | `$1`, `${1}`     | First capture             |
 | `$foo`, `${foo}` | Capture group named "foo" |
 
+# Configuration
+
+The configuration file is located at `$XDG_CONFIG_HOME/lasr/lasr.toml` (`~/.config/lasr/lasr.toml` by default).
+
 # Similar tools
 
 - [sad](https://github.com/ms-jpq/sad) allows you to approve/reject each replacement, but must be re-run each time you change the pattern.

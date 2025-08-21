@@ -8,7 +8,7 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{
     DefaultTerminal, Frame,
     layout::{Constraint, Direction, Layout, Position},
-    style::{Style, Stylize},
+    style::{Modifier, Style, Stylize},
     text::{Line, Span},
     widgets::{Block, Paragraph, Row, Table, TableState},
 };
@@ -39,21 +39,23 @@ impl LineSubstitution {
                 line.push_span(Span::raw(&self.text[last_end..range.start]));
             }
 
-            // Add the match with a red background
-            line.push_span(Span::styled(
-                &self.text[range.clone()],
-                Style::default()
-                    .bg(ratatui::style::Color::LightRed)
-                    .crossed_out(),
-            ));
-
-            let replaced = &self.text[range.clone()];
-            let replaced = re.replace_all(replaced, replacement);
-            // Add the replacement with a green background
-            line.push_span(Span::styled(
-                replaced,
-                Style::default().bg(ratatui::style::Color::LightGreen),
-            ));
+            if replacement.is_empty() {
+                // Add the match with a red background
+                line.push_span(Span::styled(
+                    &self.text[range.clone()],
+                    Style::default()
+                        .fg(ratatui::style::Color::Red)
+                        .crossed_out(),
+                ));
+            } else {
+                let replaced = &self.text[range.clone()];
+                let replaced = re.replace_all(replaced, replacement);
+                // Add the replacement with a green background
+                line.push_span(Span::styled(
+                    replaced,
+                    Style::default().fg(ratatui::style::Color::Green),
+                ));
+            }
 
             last_end = range.end;
         }

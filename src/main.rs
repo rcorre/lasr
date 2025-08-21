@@ -1,8 +1,9 @@
 use std::path::PathBuf;
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use clap::Parser;
-use etcetera::{AppStrategy, choose_app_strategy};
+use etcetera::{AppStrategy, AppStrategyArgs, choose_app_strategy};
+use lasr::config::Config;
 use lasr::tui::App;
 use tracing_error::ErrorLayer;
 use tracing_subscriber::{Layer as _, layer::SubscriberExt as _, util::SubscriberInitExt as _};
@@ -13,14 +14,21 @@ use tracing_subscriber::{Layer as _, layer::SubscriberExt as _, util::Subscriber
 pub struct Cli {
     /// Path to search, defaults to "."
     path: Option<PathBuf>,
+
+    #[arg(short, long)]
+    config_path: Option<PathBuf>,
 }
 
-pub fn initialize_logging() -> Result<()> {
-    let strategy = choose_app_strategy(etcetera::AppStrategyArgs {
+fn strategy() -> AppStrategyArgs {
+    etcetera::AppStrategyArgs {
         app_name: env!("CARGO_PKG_NAME").to_string(),
         author: "rrc".to_string(),
         top_level_domain: "codes".to_string(),
-    })?;
+    }
+}
+
+fn initialize_logging() -> Result<()> {
+    let strategy = choose_app_strategy(strategy())?;
     let cache_dir = strategy.cache_dir();
     let log_path = cache_dir.join("log.txt");
     let log_file = std::fs::File::create(log_path)?;
@@ -38,10 +46,25 @@ pub fn initialize_logging() -> Result<()> {
     Ok(())
 }
 
+fn load_config(path: Option<PathBuf>) -> Result<Config> {
+    let path = if let Some(path) = path {
+        path
+    } else {
+        let strategy = choose_app_strategy(strategy())?;
+        strategy.config_dir().join("lasr.toml")
+    };
+    match std::fs::read_to_string(path) {
+        Ok(s) => Ok(toml::from_str(&s)?),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(Config::default()),
+        Err(err) => bail!(err),
+    }
+}
+
 fn main() -> Result<()> {
     initialize_logging()?;
 
     let cli = Cli::parse();
+    let config = load_config(cli.config_path)?;
 
     let mut terminal = ratatui::init();
     crossterm::execute!(
