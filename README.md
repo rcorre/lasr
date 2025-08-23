@@ -38,8 +38,65 @@ The following replacements are available:
 # Configuration
 
 The configuration file is located at `$XDG_CONFIG_HOME/lasr/lasr.toml` (`~/.config/lasr/lasr.toml` by default).
+The current configuration can be printed by running `lasr --dump-config`. This can be used as a starting point to edit your own configuration:
 
-# Similar tools
+```bash
+lasr --dump-config > ~/.config/lasr/lasr.toml
+```
+
+Here's an example config with default values:
+
+```toml
+[theme.base]
+fg = "White"
+
+[theme.find]
+fg = "Red"
+add_modifier = "CROSSED_OUT"
+
+[theme.replace]
+fg = "Green"
+add_modifier = "BOLD"
+```
+
+## Theme
+
+The `theme` section of the config includes 3 "style" sub-sections:
+
+| key       | description                 |
+| --------- | --------------------------- |
+| `base`    | Most text/UI                |
+| `find`    | Text matched by the pattern |
+| `replace` | Replacement text            |
+
+A "style" has the following attributes
+
+| key            | description                 |
+| -------------- | --------------------------- |
+| `fg`           | Foreground color            |
+| `bg`           | Background color            |
+| `add_modifier` | Add modifiers               |
+| `sub_modifier` | Remove modifiers            |
+
+A color can be an [ANSI color name] like `"red"`, an [ANSI 8-bit color index] like `"7"`, or a hex string like `"#00FF00"`.
+
+[ANSI color name]: https://docs.rs/ratatui/latest/ratatui/style/enum.Color.html
+[ANSI 8-bit color index]: https://en.wikipedia.org/wiki/ANSI_escape_code#8-bit
+
+`add_modifier` and `sub_modifier` can be one of the following:
+
+- `"BOLD"`
+- `"DIM"`
+- `"ITALIC"`
+- `"UNDERLINED"`
+- `"SLOW_BLINK"`
+- `"RAPID_BLINK"`
+- `"REVERSED"`
+- `"HIDDEN"`
+- `"CROSSED_OUT"`
+
+# Other cool search/replace tools
 
 - [sad](https://github.com/ms-jpq/sad) allows you to approve/reject each replacement, but must be re-run each time you change the pattern.
 - [sd](https://github.com/chmln/sd) provides a simpler CLI alternative to `sed`, but is not interactive.
+- [ast-grep](https://github.com/ast-grep/ast-grep) is like `sed`/`grep`, but using tree-sitter to match code syntax.

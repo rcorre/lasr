@@ -1,5 +1,6 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::Rect;
+use ratatui::style::Style;
 use ratatui::{
     Frame,
     widgets::{Block, Borders, Paragraph},
@@ -79,9 +80,10 @@ impl LineInput {
         self.pattern.len() as u16 + 2
     }
 
-    pub fn draw(&self, frame: &mut Frame, area: Rect, title: &str) {
+    pub fn draw(&self, frame: &mut Frame, area: Rect, title: &str, style: Style) {
         let input = Paragraph::new(self.pattern.as_str())
-            .block(Block::new().borders(Borders::all()).title(title));
+            .block(Block::new().borders(Borders::all()).title(title))
+            .style(style);
         frame.render_widget(input, area);
     }
 }

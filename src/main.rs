@@ -5,6 +5,7 @@ use clap::Parser;
 use etcetera::{AppStrategy, AppStrategyArgs, choose_app_strategy};
 use lasr::config::Config;
 use lasr::tui::App;
+use tracing::debug;
 use tracing_error::ErrorLayer;
 use tracing_subscriber::{Layer as _, layer::SubscriberExt as _, util::SubscriberInitExt as _};
 
@@ -16,7 +17,13 @@ pub struct Cli {
     path: Option<PathBuf>,
 
     #[arg(short, long)]
+    /// Path to the config file, defaults to $XDG_CONFIG_HOME/lasr/lasr.toml (~/.config/lasr/lasr.toml)
+    /// No config is loaded if an empty string is given.
     config_path: Option<PathBuf>,
+
+    #[arg(long)]
+    /// Print the current config to stdout and exit
+    dump_config: bool,
 }
 
 fn strategy() -> AppStrategyArgs {
@@ -53,6 +60,11 @@ fn load_config(path: Option<PathBuf>) -> Result<Config> {
         let strategy = choose_app_strategy(strategy())?;
         strategy.config_dir().join("lasr.toml")
     };
+    if path.as_os_str().is_empty() {
+        debug!("Skipping config load");
+        return Ok(Config::default());
+    }
+    debug!("Loading config from {path:?}");
     match std::fs::read_to_string(path) {
         Ok(s) => Ok(toml::from_str(&s)?),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(Config::default()),
@@ -65,6 +77,11 @@ fn main() -> Result<()> {
 
     let cli = Cli::parse();
     let config = load_config(cli.config_path)?;
+
+    if cli.dump_config {
+        print!("{}", toml::to_string_pretty(&config)?);
+        return Ok(());
+    }
 
     let mut terminal = ratatui::init();
     crossterm::execute!(
@@ -82,7 +99,7 @@ fn main() -> Result<()> {
         }
     });
     {
-        let mut app = App::new(cli.path.unwrap_or(".".into()), rx);
+        let mut app = App::new(cli.path.unwrap_or(".".into()), config, rx);
         app.run(&mut terminal)?;
     }
 

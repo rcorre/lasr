@@ -1,14 +1,16 @@
 use std::{ops::Range, path::PathBuf};
 
 use super::input::LineInput;
-use crate::search::{self, FileMatch};
+use crate::{
+    config::{Config, Theme},
+    search::{self, FileMatch},
+};
 use anyhow::{Context, Result};
 use crossbeam::channel::{Receiver, RecvError, bounded, never, select_biased};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{
     DefaultTerminal, Frame,
     layout::{Constraint, Direction, Layout, Position},
-    style::{Modifier, Style, Stylize},
     text::{Line, Span},
     widgets::{Block, Paragraph, Row, Table, TableState},
 };
@@ -29,7 +31,7 @@ struct FileSubstitution {
 }
 
 impl LineSubstitution {
-    fn to_line<'a>(&'a self, re: &'a Regex, replacement: &'a str) -> Line<'a> {
+    fn to_line<'a>(&'a self, re: &'a Regex, replacement: &'a str, theme: &Theme) -> Line<'a> {
         let mut line = Line::default();
         let mut last_end = 0;
 
@@ -41,20 +43,12 @@ impl LineSubstitution {
 
             if replacement.is_empty() {
                 // Add the match with a red background
-                line.push_span(Span::styled(
-                    &self.text[range.clone()],
-                    Style::default()
-                        .fg(ratatui::style::Color::Red)
-                        .crossed_out(),
-                ));
+                line.push_span(Span::styled(&self.text[range.clone()], theme.find));
             } else {
                 let replaced = &self.text[range.clone()];
                 let replaced = re.replace_all(replaced, replacement);
                 // Add the replacement with a green background
-                line.push_span(Span::styled(
-                    replaced,
-                    Style::default().fg(ratatui::style::Color::Green),
-                ));
+                line.push_span(Span::styled(replaced, theme.replace));
             }
 
             last_end = range.end;
@@ -71,6 +65,7 @@ impl LineSubstitution {
 
 pub struct App {
     path: PathBuf,
+    config: Config,
     subs: Vec<FileSubstitution>,
     search_rx: Option<Receiver<FileMatch>>,
     event_rx: Receiver<Event>,
@@ -100,11 +95,12 @@ impl App {
         });
     }
 
-    pub fn new(path: impl Into<PathBuf>, event_rx: Receiver<Event>) -> Self {
+    pub fn new(path: impl Into<PathBuf>, config: Config, event_rx: Receiver<Event>) -> Self {
         let path = path.into();
 
         Self {
             path,
+            config,
             pattern_input: LineInput::default(),
             replacement_input: LineInput::default(),
             search_rx: None,
@@ -164,6 +160,7 @@ impl App {
     // returns true if more results are needed
     fn draw(&mut self, frame: &mut Frame) -> Result<bool> {
         trace!("Drawing");
+        let theme = &self.config.theme;
 
         let [input_area, search_area] = Layout::default()
             .direction(Direction::Vertical)
@@ -180,10 +177,15 @@ impl App {
             ])
             .areas(input_area);
 
-        self.pattern_input.draw(frame, pattern_area, "Search");
-        self.replacement_input.draw(frame, replace_area, "Replace");
+        self.pattern_input
+            .draw(frame, pattern_area, "Search", theme.base);
+        self.replacement_input
+            .draw(frame, replace_area, "Replace", theme.base);
 
-        frame.render_widget(Paragraph::new("\n< TAB >").centered(), tab_area);
+        frame.render_widget(
+            Paragraph::new("\n< TAB >").centered().style(theme.base),
+            tab_area,
+        );
 
         // All the +1s account for borders
         frame.set_cursor_position(if self.editing_pattern {
@@ -220,11 +222,12 @@ impl App {
                 sub.subs.iter().map(|s| {
                     Row::new(vec![
                         Line::raw(s.line_number.to_string()),
-                        s.to_line(re, &self.replacement),
+                        s.to_line(re, &self.replacement, theme),
                     ])
                 }),
                 &[Constraint::Max(6), Constraint::Fill(1)],
             )
+            .style(theme.base)
             .block(
                 Block::bordered().title_top(
                     sub.path
@@ -360,6 +363,8 @@ impl App {
 mod tests {
     use std::path::Path;
 
+    use crate::config::Config;
+
     use super::App;
     use crossbeam::channel::{Sender, bounded};
     use crossterm::event::{Event, KeyCode};
@@ -380,7 +385,7 @@ mod tests {
         fn with_dir(path: &Path) -> Self {
             let (event_tx, event_rx) = bounded(1);
             Test {
-                app: App::new(path, event_rx),
+                app: App::new(path, Config::default(), event_rx),
                 event_tx,
             }
         }
