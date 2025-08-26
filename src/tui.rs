@@ -2,12 +2,12 @@ use std::{ops::Range, path::PathBuf};
 
 use super::input::LineInput;
 use crate::{
-    config::{Config, Theme},
+    config::{Action, Config, Theme},
     search::{self, FileMatch},
 };
 use anyhow::{Context, Result};
 use crossbeam::channel::{Receiver, RecvError, bounded, never, select_biased};
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{Event, KeyEvent, KeyEventKind};
 use ratatui::{
     DefaultTerminal, Frame,
     layout::{Constraint, Direction, Layout, Position},
@@ -307,27 +307,25 @@ impl App {
     }
 
     fn handle_key_event(&mut self, key_event: KeyEvent) -> Result<State> {
-        // these keys are handled regardless of whether we're editing the query
-        match key_event.code {
-            KeyCode::Esc => {
-                debug!("Exit requested");
-                return Ok(State::Exit);
+        if let Some(action) = self.config.keys.get(&key_event.into()) {
+            match action {
+                Action::Exit => {
+                    debug!("Exit requested");
+                    return Ok(State::Exit);
+                }
+                Action::ToggleSearchReplace => {
+                    self.editing_pattern = !self.editing_pattern;
+                    info!(
+                        "Toggled editing mode. editing_pattern={}",
+                        self.editing_pattern
+                    );
+                    return Ok(State::Continue);
+                }
+                Action::Confirm => {
+                    return Ok(State::Confirm);
+                }
+                _ => {}
             }
-            KeyCode::Char('c') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
-                debug!("Exit requested");
-                return Ok(State::Exit);
-            }
-            KeyCode::Tab => {
-                self.editing_pattern = !self.editing_pattern;
-                info!(
-                    "Toggled editing mode. editing_pattern={}",
-                    self.editing_pattern
-                );
-            }
-            KeyCode::Enter => {
-                return Ok(State::Confirm);
-            }
-            _ => {}
         }
 
         if self.editing_pattern {
