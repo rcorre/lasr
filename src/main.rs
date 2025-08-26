@@ -17,7 +17,7 @@ pub struct Cli {
     path: Option<PathBuf>,
 
     #[arg(short, long)]
-    /// Path to the config file, defaults to $XDG_CONFIG_HOME/lasr/lasr.toml (~/.config/lasr/lasr.toml)
+    /// Path to the config file, defaults to $XDG_CONFIG_HOME/lasr/lasr.toml (~/.config/lasr/lasr.toml).
     /// No config is loaded if an empty string is given.
     config_path: Option<PathBuf>,
 
