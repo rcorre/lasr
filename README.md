@@ -27,13 +27,7 @@ Finally,
 The pattern syntax is based on the rust [regex](https://docs.rs/regex/latest/regex/#syntax) crate.
 The replacement syntax is based on the [replace](https://docs.rs/regex/latest/regex/struct.Regex.html#method.replace) method in that crate.
 
-The following replacements are available:
-
-| Text             | Description               |
-| ----             | -----------               |
-| `$0`, `${0}`     | Whole match               |
-| `$1`, `${1}`     | First capture             |
-| `$foo`, `${foo}` | Capture group named "foo" |
+Replacements may reference numbered groups as `$1` or `${1}`, or named groups like `$foo` or `${foo}`. The `{}` brackets may be necessary to separate the replacement from other text. `$0` or `${0}` refers to the entire match.
 
 # Configuration
 
@@ -57,6 +51,12 @@ add_modifier = "CROSSED_OUT"
 [theme.replace]
 fg = "Green"
 add_modifier = "BOLD"
+
+[keys]
+enter = "confirm"
+esc = "exit"
+c-c = "exit"
+tab = "toggle_search_replace"
 ```
 
 ## Theme
@@ -94,6 +94,35 @@ A color can be an [ANSI color name] like `"red"`, an [ANSI 8-bit color index] li
 - `"REVERSED"`
 - `"HIDDEN"`
 - `"CROSSED_OUT"`
+
+## Keys
+
+The `keys` section specifies key bindings. Each key is a single character or key name, optionally followed by "c-" and/or "a-" to specify a ctrl or alt modifier. The following are valid key names:
+
+- a-z, 0-9
+- f0-f12
+- backspace
+- enter
+- left
+- right
+- up
+- down
+- home
+- end
+- pageup
+- pagedown
+- tab
+- backtab
+- delete
+- insert
+- esc
+
+Each value in the `keys` section is one of the following actions:
+
+- `noop`: Do nothing, used to unbind a default key 
+- `exit`: Exit without performing any replacement
+- `confirm`: Exit and perform replacements
+- `toggle_search_replace`: Switch focus between the "search" and "replace" inputs
 
 # Other cool search/replace tools
 
