@@ -408,6 +408,23 @@ mod tests {
         }
     }
 
+    fn stage_files() -> tempfile::TempDir {
+        let tmp = tempfile::tempdir().unwrap();
+        for entry in ignore::Walk::new("testdata") {
+            let entry = entry.unwrap();
+            let src = entry.path();
+            let dst = tmp.path().join(src.strip_prefix("testdata").unwrap());
+            tracing::debug!("Test copying {src:?} to {dst:?}");
+
+            let meta = entry.metadata().unwrap();
+            if meta.is_file() {
+                std::fs::create_dir_all(dst.parent().unwrap()).unwrap();
+                std::fs::copy(src, dst).unwrap();
+            }
+        }
+        tmp
+    }
+
     #[test]
     #[tracing_test::traced_test]
     fn test_empty() {
@@ -474,19 +491,7 @@ mod tests {
     #[test]
     #[tracing_test::traced_test]
     fn test_replace() {
-        let tmp = tempfile::tempdir().unwrap();
-        for entry in ignore::Walk::new("testdata") {
-            let entry = entry.unwrap();
-            let src = entry.path();
-            let dst = tmp.path().join(src.strip_prefix("testdata").unwrap());
-            tracing::debug!("Test copying {src:?} to {dst:?}");
-
-            let meta = entry.metadata().unwrap();
-            if meta.is_file() {
-                std::fs::create_dir_all(dst.parent().unwrap()).unwrap();
-                std::fs::copy(src, dst).unwrap();
-            }
-        }
+        let tmp = stage_files();
 
         let mut test = Test::with_dir(tmp.path());
         test.input("line");
@@ -532,19 +537,7 @@ The third replacement.
     #[test]
     #[tracing_test::traced_test]
     fn test_replace_capture() {
-        let tmp = tempfile::tempdir().unwrap();
-        for entry in ignore::Walk::new("testdata") {
-            let entry = entry.unwrap();
-            let src = entry.path();
-            let dst = tmp.path().join(src.strip_prefix("testdata").unwrap());
-            tracing::debug!("Test copying {src:?} to {dst:?}");
-
-            let meta = entry.metadata().unwrap();
-            if meta.is_file() {
-                std::fs::create_dir_all(dst.parent().unwrap()).unwrap();
-                std::fs::copy(src, dst).unwrap();
-            }
-        }
+        let tmp = stage_files();
 
         let mut test = Test::with_dir(tmp.path());
         test.input("This is");
