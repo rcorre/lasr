@@ -4,7 +4,7 @@ expression: terminal.backend()
 ---
 "                                                                                "
 " ┌Search────────┐         ┌Replace───────┐                                      "
-" │              │ < TAB > │              │                                      "
+" │              │ < tab > │              │                                      "
 " └──────────────┘         └──────────────┘                                      "
 "                                                                                "
 "                                                                                "

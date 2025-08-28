@@ -1,4 +1,4 @@
-use std::{collections::HashMap, str::FromStr};
+use std::{collections::HashMap, fmt::Display, str::FromStr};
 
 use anyhow::{Context, bail};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -152,6 +152,12 @@ impl From<Key> for String {
         };
 
         s
+    }
+}
+
+impl Display for Key {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&String::from(*self))
     }
 }
 

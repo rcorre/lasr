@@ -182,10 +182,20 @@ impl App {
         self.replacement_input
             .draw(frame, replace_area, "Replace", theme.base);
 
-        frame.render_widget(
-            Paragraph::new("\n< TAB >").centered().style(theme.base),
-            tab_area,
-        );
+        if let Some(swap_key) = self
+            .config
+            .keys
+            .iter()
+            .find(|(_, v)| **v == Action::ToggleSearchReplace)
+            .map(|(k, _)| k)
+        {
+            frame.render_widget(
+                Paragraph::new(format!("\n< {swap_key} >"))
+                    .centered()
+                    .style(theme.base),
+                tab_area,
+            );
+        };
 
         // All the +1s account for borders
         frame.set_cursor_position(if self.editing_pattern {
