@@ -42,7 +42,7 @@ Here's an example config with default values:
 
 ```toml
 [theme.base]
-fg = "White"
+fg = "Reset"
 
 [theme.find]
 fg = "Red"

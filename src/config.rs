@@ -176,7 +176,7 @@ impl Default for Theme {
     fn default() -> Self {
         Self {
             base: Style {
-                fg: Some(Color::White),
+                fg: Some(Color::Reset),
                 ..Default::default()
             },
             find: Style {
