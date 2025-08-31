@@ -38,7 +38,7 @@ The current configuration can be printed by running `lasr --dump-config`. This c
 lasr --dump-config > ~/.config/lasr/lasr.toml
 ```
 
-Here's an example config with default values:
+## Default Config
 
 ```toml
 [theme.base]
@@ -53,10 +53,24 @@ fg = "Green"
 add_modifier = "BOLD"
 
 [keys]
+c-b = "cursor_left"
+backspace = "delete_char_backward"
 enter = "confirm"
+c-e = "cursor_end"
+c-u = "delete_line"
+right = "cursor_right"
+end = "cursor_end"
+left = "cursor_left"
+home = "cursor_home"
+c-h = "delete_char_backward"
+c-d = "delete_char"
+c-f = "cursor_right"
+c-k = "delete_to_end_of_line"
+c-a = "cursor_home"
+tab = "toggle_search_replace"
 esc = "exit"
 c-c = "exit"
-tab = "toggle_search_replace"
+c-w = "delete_word"
 ```
 
 ## Theme
