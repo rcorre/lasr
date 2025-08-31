@@ -63,20 +63,20 @@ tab = "toggle_search_replace"
 
 The `theme` section of the config includes 3 "style" sub-sections:
 
-| key       | description                 |
-| --------- | --------------------------- |
+| Key       | Description                 |
+|-----------|---------------------------- |
 | `base`    | Most text/UI                |
 | `find`    | Text matched by the pattern |
 | `replace` | Replacement text            |
 
 A "style" has the following attributes
 
-| key            | description                 |
-| -------------- | --------------------------- |
-| `fg`           | Foreground color            |
-| `bg`           | Background color            |
-| `add_modifier` | Add modifiers               |
-| `sub_modifier` | Remove modifiers            |
+| Key            | Description      |
+|----------------|------------------|
+| `fg`           | Foreground color |
+| `bg`           | Background color |
+| `add_modifier` | Add modifiers    |
+| `sub_modifier` | Remove modifiers |
 
 A color can be an [ANSI color name] like `"red"`, an [ANSI 8-bit color index] like `"7"`, or a hex string like `"#00FF00"`.
 
@@ -119,39 +119,21 @@ The `keys` section specifies key bindings. Each key is a single character or key
 
 Each value in the `keys` section is one of the following actions:
 
-- `noop`: Do nothing, used to unbind a default key
-- `exit`: Exit without performing any replacement
-- `confirm`: Exit and perform replacements
-- `toggle_search_replace`: Switch focus between the "search" and "replace" inputs
-- `cursor_left`: Move cursor left one character
-- `cursor_right`: Move cursor right one character
-- `cursor_home`: Move cursor to beginning of line
-- `cursor_end`: Move cursor to end of line
-- `delete_char`: Delete character at cursor position
-- `delete_char_backward`: Delete character before cursor (backspace)
-- `delete_word`: Delete word before cursor
-- `delete_to_end_of_line`: Delete from cursor to end of line
-- `delete_line`: Delete entire line
-
-## Default Key Bindings
-
-The following readline-emacs-style key bindings are available by default:
-
-| Key                                      | Action                  |
-|------------------------------------------|-------------------------|
-| <kbd>Enter</kbd>                         | `confirm`               |
-| <kbd>Esc</kbd>                           | `exit`                  |
-| <kbd>Ctrl+C</kbd>                        | `exit`                  |
-| <kbd>Tab</kbd>                           | `toggle_search_replace` |
-| <kbd>←</kbd> / <kbd>Ctrl+B</kbd>         | `cursor_left`           |
-| <kbd>→</kbd> / <kbd>Ctrl+F</kbd>         | `cursor_right`          |
-| <kbd>Home</kbd> / <kbd>Ctrl+A</kbd>      | `cursor_home`           |
-| <kbd>End</kbd> / <kbd>Ctrl+E</kbd>       | `cursor_end`            |
-| <kbd>Backspace</kbd> / <kbd>Ctrl+H</kbd> | `delete_char_backward`  |
-| <kbd>Ctrl+D</kbd>                        | `delete_char`           |
-| <kbd>Ctrl+W</kbd>                        | `delete_word`           |
-| <kbd>Ctrl+K</kbd>                        | `delete_to_end_of_line` |
-| <kbd>Ctrl+U</kbd>                        | `delete_line`           |
+| Action                  | Description                                             | Default Key Binding                       |
+|-------------------------|-------------------------------------------------------- |-------------------------------------------|
+| `noop`                  | Do nothing, used to unbind a default key                |                                           |
+| `exit`                  | Exit without performing any replacement                 | <kbd>Esc</kbd>, <kbd>Ctrl+C</kbd>         |
+| `confirm`               | Exit and perform replacements                           | <kbd>Enter</kbd>                          |
+| `toggle_search_replace` | Switch focus between the "search" and "replace" inputs  | <kbd>Tab</kbd>                            |
+| `cursor_left`           | Move cursor left one character                          | <kbd>←</kbd>, <kbd>Ctrl+B</kbd>           |
+| `cursor_right`          | Move cursor right one character                         | <kbd>→</kbd>, <kbd>Ctrl+F</kbd>           |
+| `cursor_home`           | Move cursor to beginning of line                        | <kbd>Home</kbd>, <kbd>Ctrl+A</kbd>        |
+| `cursor_end`            | Move cursor to end of line                              | <kbd>End</kbd>, <kbd>Ctrl+E</kbd>         |
+| `delete_char`           | Delete character at cursor position                     | <kbd>Ctrl+D</kbd>                         |
+| `delete_char_backward`  | Delete character before cursor (backspace)              | <kbd>Backspace</kbd>, <kbd>Ctrl+H</kbd>   |
+| `delete_word`           | Delete word before cursor                               | <kbd>Ctrl+W</kbd>                         |
+| `delete_to_end_of_line` | Delete from cursor to end of line                       | <kbd>Ctrl+K</kbd>                         |
+| `delete_line`           | Delete entire line                                      | <kbd>Ctrl+U</kbd>                         |
 
 # Other cool search/replace tools
 
