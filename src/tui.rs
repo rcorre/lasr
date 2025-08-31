@@ -339,7 +339,10 @@ impl App {
         }
 
         if self.editing_pattern {
-            let Some(pattern) = self.pattern_input.handle_key_event(key_event) else {
+            let Some(pattern) = self
+                .pattern_input
+                .handle_key_event(key_event, &self.config.keys)
+            else {
                 debug!("Pattern unchanged");
                 return Ok(State::Continue);
             };
@@ -355,7 +358,10 @@ impl App {
             self.start_search();
             self.subs.clear();
         } else {
-            let Some(replacement) = self.replacement_input.handle_key_event(key_event) else {
+            let Some(replacement) = self
+                .replacement_input
+                .handle_key_event(key_event, &self.config.keys)
+            else {
                 debug!("Replacement unchanged");
                 return Ok(State::Continue);
             };

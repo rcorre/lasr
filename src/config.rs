@@ -12,6 +12,15 @@ pub enum Action {
     Exit,
     Confirm,
     ToggleSearchReplace,
+    CursorLeft,
+    CursorRight,
+    CursorHome,
+    CursorEnd,
+    DeleteChar,
+    DeleteCharBackward,
+    DeleteWord,
+    DeleteToEndOfLine,
+    DeleteLine,
 }
 
 #[derive(Debug, PartialOrd, PartialEq, Eq, Clone, Copy, Hash, Serialize, Deserialize)]
@@ -209,6 +218,20 @@ impl Default for Config {
                 ("esc", Action::Exit),
                 ("c-c", Action::Exit),
                 ("tab", Action::ToggleSearchReplace),
+                ("left", Action::CursorLeft),
+                ("c-b", Action::CursorLeft),
+                ("right", Action::CursorRight),
+                ("c-f", Action::CursorRight),
+                ("home", Action::CursorHome),
+                ("c-a", Action::CursorHome),
+                ("end", Action::CursorEnd),
+                ("c-e", Action::CursorEnd),
+                ("backspace", Action::DeleteCharBackward),
+                ("c-h", Action::DeleteCharBackward),
+                ("c-d", Action::DeleteChar),
+                ("c-w", Action::DeleteWord),
+                ("c-k", Action::DeleteToEndOfLine),
+                ("c-u", Action::DeleteLine),
             ]
             .map(|(k, v)| (k.to_string().try_into().unwrap(), v))
             .into(),
@@ -250,27 +273,78 @@ mod tests {
             c-c = "exit"
             tab = "toggle_search_replace"
             c-x = "exit"
+            left = "cursor_left"
+            c-b = "cursor_left"
+            right = "cursor_right"
+            c-f = "cursor_right"
+            home = "cursor_home"
+            c-a = "cursor_home"
+            end = "cursor_end"
+            c-e = "cursor_end"
+            backspace = "delete_char_backward"
+            c-h = "delete_char_backward"
+            c-d = "delete_char"
+            c-w = "delete_word"
+            c-k = "delete_to_end_of_line"
+            c-u = "delete_line"
         }
         .to_string();
 
         let c: Config = t.parse().unwrap();
+        let expected_keys = [
+            (Key::char('x', KeyModifiers::CONTROL), Action::Exit),
+            (Key::char('c', KeyModifiers::CONTROL), Action::Exit),
+            (
+                Key::new(KeyCode::Enter, KeyModifiers::empty()),
+                Action::Confirm,
+            ),
+            (Key::new(KeyCode::Esc, KeyModifiers::empty()), Action::Exit),
+            (
+                Key::new(KeyCode::Tab, KeyModifiers::empty()),
+                Action::ToggleSearchReplace,
+            ),
+            (
+                Key::new(KeyCode::Left, KeyModifiers::empty()),
+                Action::CursorLeft,
+            ),
+            (Key::char('b', KeyModifiers::CONTROL), Action::CursorLeft),
+            (
+                Key::new(KeyCode::Right, KeyModifiers::empty()),
+                Action::CursorRight,
+            ),
+            (Key::char('f', KeyModifiers::CONTROL), Action::CursorRight),
+            (
+                Key::new(KeyCode::Home, KeyModifiers::empty()),
+                Action::CursorHome,
+            ),
+            (Key::char('a', KeyModifiers::CONTROL), Action::CursorHome),
+            (
+                Key::new(KeyCode::End, KeyModifiers::empty()),
+                Action::CursorEnd,
+            ),
+            (Key::char('e', KeyModifiers::CONTROL), Action::CursorEnd),
+            (
+                Key::new(KeyCode::Backspace, KeyModifiers::empty()),
+                Action::DeleteCharBackward,
+            ),
+            (
+                Key::char('h', KeyModifiers::CONTROL),
+                Action::DeleteCharBackward,
+            ),
+            (Key::char('d', KeyModifiers::CONTROL), Action::DeleteChar),
+            (Key::char('w', KeyModifiers::CONTROL), Action::DeleteWord),
+            (
+                Key::char('k', KeyModifiers::CONTROL),
+                Action::DeleteToEndOfLine,
+            ),
+            (Key::char('u', KeyModifiers::CONTROL), Action::DeleteLine),
+        ]
+        .into();
+
         assert_eq!(
             c,
             Config {
-                keys: [
-                    (Key::char('x', KeyModifiers::CONTROL), Action::Exit),
-                    (Key::char('c', KeyModifiers::CONTROL), Action::Exit),
-                    (
-                        Key::new(KeyCode::Enter, KeyModifiers::empty()),
-                        Action::Confirm
-                    ),
-                    (Key::new(KeyCode::Esc, KeyModifiers::empty()), Action::Exit),
-                    (
-                        Key::new(KeyCode::Tab, KeyModifiers::empty()),
-                        Action::ToggleSearchReplace
-                    ),
-                ]
-                .into(),
+                keys: expected_keys,
                 theme: Theme {
                     base: Style {
                         fg: Some(Color::Indexed(6)),
