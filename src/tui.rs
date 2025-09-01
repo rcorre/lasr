@@ -14,7 +14,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Paragraph, Row, Table, TableState},
 };
-use regex::Regex;
+use regex::{Regex, RegexBuilder};
 use tracing::{debug, info, trace, warn};
 
 #[derive(Debug)]
@@ -75,6 +75,7 @@ pub struct App {
     // TODO: respect casing
     re: Option<Regex>,
     replacement: String,
+    ignore_case: bool,
 }
 
 enum State {
@@ -90,8 +91,9 @@ impl App {
         let pattern = self.pattern_input.pattern().to_string();
         let path = self.path.clone();
         self.search_rx.replace(rx);
+        let ignore_case = self.ignore_case;
         std::thread::spawn(move || -> Result<()> {
-            search::search(pattern, path, tx).context("Search thread error")
+            search::search(pattern, path, ignore_case, tx).context("Search thread error")
         });
     }
 
@@ -109,6 +111,7 @@ impl App {
             editing_pattern: true,
             re: None,
             replacement: "".to_string(),
+            ignore_case: false,
         }
     }
 
@@ -177,8 +180,16 @@ impl App {
             ])
             .areas(input_area);
 
-        self.pattern_input
-            .draw(frame, pattern_area, "Search", theme.base);
+        self.pattern_input.draw(
+            frame,
+            pattern_area,
+            if self.ignore_case {
+                "Search (i)"
+            } else {
+                "Search"
+            },
+            theme.base,
+        );
         self.replacement_input
             .draw(frame, replace_area, "Replace", theme.base);
 
@@ -283,6 +294,24 @@ impl App {
         Ok(())
     }
 
+    fn update_pattern(&mut self) {
+        let pattern = self.pattern_input.pattern();
+        self.re = match RegexBuilder::new(pattern)
+            .case_insensitive(self.ignore_case)
+            .build()
+        {
+            Ok(re) => Some(re),
+            Err(err) => {
+                // Expected to happen as the user is typing, not an error
+                info!("Not a valid regex: '{pattern}': {err}");
+                return;
+            }
+        };
+        info!("New pattern: {pattern}");
+        self.start_search();
+        self.subs.clear();
+    }
+
     /// updates the application's state based on user input
     fn handle_events(&mut self, need_more: bool) -> Result<State> {
         trace!("Awaiting event");
@@ -334,29 +363,24 @@ impl App {
                 Action::Confirm => {
                     return Ok(State::Confirm);
                 }
+                Action::ToggleIgnoreCase => {
+                    self.ignore_case = !self.ignore_case;
+                    self.update_pattern();
+                    return Ok(State::Continue);
+                }
                 _ => {}
             }
         }
 
         if self.editing_pattern {
-            let Some(pattern) = self
+            let Some(_) = self
                 .pattern_input
                 .handle_key_event(key_event, &self.config.keys)
             else {
                 debug!("Pattern unchanged");
                 return Ok(State::Continue);
             };
-            self.re = match Regex::new(pattern) {
-                Ok(re) => Some(re),
-                Err(err) => {
-                    // Expected to happen as the user is typing, not an error
-                    info!("Not a valid regex: '{pattern}': {err}");
-                    return Ok(State::Continue);
-                }
-            };
-            info!("New pattern: {pattern}");
-            self.start_search();
-            self.subs.clear();
+            self.update_pattern();
         } else {
             let Some(replacement) = self
                 .replacement_input
@@ -381,7 +405,7 @@ mod tests {
 
     use super::App;
     use crossbeam::channel::{Sender, bounded};
-    use crossterm::event::{Event, KeyCode};
+    use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
     use insta::assert_snapshot;
     use pretty_assertions::assert_eq;
     use ratatui::{Terminal, backend::TestBackend};
@@ -449,6 +473,33 @@ mod tests {
     fn test_search() {
         let mut test = Test::new();
         test.input("line");
+
+        // await results from 2 files
+        test.app.handle_events(true).unwrap();
+        test.app.handle_events(true).unwrap();
+
+        let mut terminal = Terminal::new(TestBackend::new(40, 20)).unwrap();
+        terminal
+            .draw(|frame| {
+                assert!(test.app.draw(frame).unwrap(), "Should need more results");
+            })
+            .unwrap();
+        assert_snapshot!(terminal.backend());
+    }
+
+    #[test]
+    #[tracing_test::traced_test]
+    fn test_search_ignore_case() {
+        let mut test = Test::new();
+        test.input("the");
+
+        // Send ctrl-s to toggle case-insensitive
+        test.app
+            .handle_key_event(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL))
+            .unwrap();
+
+        test.app.handle_key_event(KeyCode::Tab.into()).unwrap();
+        test.input("One");
 
         // await results from 2 files
         test.app.handle_events(true).unwrap();

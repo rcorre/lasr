@@ -24,6 +24,10 @@ pub struct Cli {
     #[arg(long)]
     /// Print the current config to stdout and exit
     dump_config: bool,
+
+    #[arg(long)]
+    /// Whether to start with the ignore-case option enabled
+    ignore_case: bool,
 }
 
 fn strategy() -> AppStrategyArgs {

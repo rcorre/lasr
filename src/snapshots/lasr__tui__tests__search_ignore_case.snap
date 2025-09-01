@@ -1,0 +1,24 @@
+---
+source: src/tui.rs
+expression: terminal.backend()
+---
+"                                        "
+" ┌Search (i)─┐         ┌Replace───────┐ "
+" │the        │ < tab > │One           │ "
+" └───────────┘         └──────────────┘ "
+" ┌dir1/file2.txt──────────────────────┐ "
+" │1      One first line.              │ "
+" │2      One second line.             │ "
+" │3      One third line.              │ "
+" └────────────────────────────────────┘ "
+"                                        "
+"                                        "
+"                                        "
+"                                        "
+"                                        "
+"                                        "
+"                                        "
+"                                        "
+"                                        "
+"                                        "
+"                                        "

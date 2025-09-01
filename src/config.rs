@@ -12,6 +12,7 @@ pub enum Action {
     Exit,
     Confirm,
     ToggleSearchReplace,
+    ToggleIgnoreCase,
     CursorLeft,
     CursorRight,
     CursorHome,
@@ -179,6 +180,8 @@ pub struct Theme {
     pub base: Style,
     pub find: Style,
     pub replace: Style,
+    pub flag_disabled: Style,
+    pub flag_enabled: Style,
 }
 
 impl Default for Theme {
@@ -195,6 +198,16 @@ impl Default for Theme {
             },
             replace: Style {
                 fg: Some(Color::Green),
+                add_modifier: Modifier::BOLD,
+                ..Default::default()
+            },
+            flag_disabled: Style {
+                fg: Some(Color::Reset),
+                add_modifier: Modifier::CROSSED_OUT,
+                ..Default::default()
+            },
+            flag_enabled: Style {
+                fg: Some(Color::White),
                 add_modifier: Modifier::BOLD,
                 ..Default::default()
             },
@@ -218,6 +231,7 @@ impl Default for Config {
                 ("esc", Action::Exit),
                 ("c-c", Action::Exit),
                 ("tab", Action::ToggleSearchReplace),
+                ("c-s", Action::ToggleIgnoreCase),
                 ("left", Action::CursorLeft),
                 ("c-b", Action::CursorLeft),
                 ("right", Action::CursorRight),
@@ -268,10 +282,6 @@ mod tests {
             find.add_modifier = "BOLD"
 
             [keys]
-            enter = "confirm"
-            esc = "exit"
-            c-c = "exit"
-            tab = "toggle_search_replace"
             c-x = "exit"
             left = "cursor_left"
             c-b = "cursor_left"
@@ -291,60 +301,19 @@ mod tests {
         .to_string();
 
         let c: Config = t.parse().unwrap();
-        let expected_keys = [
-            (Key::char('x', KeyModifiers::CONTROL), Action::Exit),
-            (Key::char('c', KeyModifiers::CONTROL), Action::Exit),
-            (
-                Key::new(KeyCode::Enter, KeyModifiers::empty()),
-                Action::Confirm,
-            ),
-            (Key::new(KeyCode::Esc, KeyModifiers::empty()), Action::Exit),
-            (
-                Key::new(KeyCode::Tab, KeyModifiers::empty()),
-                Action::ToggleSearchReplace,
-            ),
-            (
-                Key::new(KeyCode::Left, KeyModifiers::empty()),
-                Action::CursorLeft,
-            ),
-            (Key::char('b', KeyModifiers::CONTROL), Action::CursorLeft),
-            (
-                Key::new(KeyCode::Right, KeyModifiers::empty()),
-                Action::CursorRight,
-            ),
-            (Key::char('f', KeyModifiers::CONTROL), Action::CursorRight),
-            (
-                Key::new(KeyCode::Home, KeyModifiers::empty()),
-                Action::CursorHome,
-            ),
-            (Key::char('a', KeyModifiers::CONTROL), Action::CursorHome),
-            (
-                Key::new(KeyCode::End, KeyModifiers::empty()),
-                Action::CursorEnd,
-            ),
-            (Key::char('e', KeyModifiers::CONTROL), Action::CursorEnd),
-            (
-                Key::new(KeyCode::Backspace, KeyModifiers::empty()),
-                Action::DeleteCharBackward,
-            ),
-            (
-                Key::char('h', KeyModifiers::CONTROL),
-                Action::DeleteCharBackward,
-            ),
-            (Key::char('d', KeyModifiers::CONTROL), Action::DeleteChar),
-            (Key::char('w', KeyModifiers::CONTROL), Action::DeleteWord),
-            (
-                Key::char('k', KeyModifiers::CONTROL),
-                Action::DeleteToEndOfLine,
-            ),
-            (Key::char('u', KeyModifiers::CONTROL), Action::DeleteLine),
-        ]
-        .into();
+        let mut keys = Config::default().keys;
+        keys.insert(
+            Key {
+                code: KeyCode::Char('x'),
+                modifiers: KeyModifiers::CONTROL,
+            },
+            Action::Exit,
+        );
 
         assert_eq!(
             c,
             Config {
-                keys: expected_keys,
+                keys,
                 theme: Theme {
                     base: Style {
                         fg: Some(Color::Indexed(6)),
@@ -360,6 +329,7 @@ mod tests {
                         add_modifier: Modifier::BOLD,
                         ..Default::default()
                     },
+                    ..Default::default()
                 }
             }
         )

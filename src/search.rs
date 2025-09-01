@@ -19,13 +19,18 @@ pub struct FileMatch {
     pub lines: Vec<LineMatch>,
 }
 
-pub fn search(pattern: String, path: PathBuf, tx: Sender<FileMatch>) -> Result<()> {
-    debug!("Starting search with pattern: '{pattern}'");
+pub fn search(
+    pattern: String,
+    path: PathBuf,
+    ignore_case: bool,
+    tx: Sender<FileMatch>,
+) -> Result<()> {
+    debug!("Starting search with pattern: '{pattern}', ignore_case: {ignore_case}");
 
     let matcher = RegexMatcherBuilder::new()
         .line_terminator(Some(b'\n'))
         .case_smart(false)
-        .case_insensitive(false)
+        .case_insensitive(ignore_case)
         .build(&pattern)
         .with_context(|| format!("Failed to compile searcher with pattern: {pattern}"))?;
     let mut searcher = SearcherBuilder::new()
@@ -84,9 +89,9 @@ mod tests {
     fn test_search() {
         let (tx, rx) = unbounded();
 
-        search("line".into(), "testdata".into(), tx).unwrap();
+        search("line".into(), "testdata".into(), false, tx).unwrap();
 
-        let mut results = [rx.recv().unwrap(), rx.recv().unwrap()];
+        let mut results: Vec<_> = rx.iter().collect();
         results.sort_by(|a, b| a.path.cmp(&b.path));
 
         assert_eq!(
@@ -127,6 +132,39 @@ mod tests {
                     ],
                 }
             ]
+        );
+
+        assert_eq!(rx.recv(), Err(RecvError));
+    }
+
+    #[test]
+    #[tracing_test::traced_test]
+    fn test_search_ignore_case() {
+        let (tx, rx) = unbounded();
+
+        search("the".into(), "testdata".into(), true, tx).unwrap();
+        let mut results: Vec<_> = rx.iter().collect();
+        results.sort_by(|a, b| a.path.cmp(&b.path));
+
+        assert_eq!(
+            results,
+            [FileMatch {
+                path: "testdata/dir1/file2.txt".into(),
+                lines: vec![
+                    LineMatch {
+                        number: 1,
+                        text: "The first line.\n".into(),
+                    },
+                    LineMatch {
+                        number: 2,
+                        text: "The second line.\n".into(),
+                    },
+                    LineMatch {
+                        number: 3,
+                        text: "The third line.\n".into(),
+                    },
+                ],
+            },]
         );
 
         assert_eq!(rx.recv(), Err(RecvError));
