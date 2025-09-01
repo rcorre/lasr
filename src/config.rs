@@ -180,8 +180,6 @@ pub struct Theme {
     pub base: Style,
     pub find: Style,
     pub replace: Style,
-    pub flag_disabled: Style,
-    pub flag_enabled: Style,
 }
 
 impl Default for Theme {
@@ -198,16 +196,6 @@ impl Default for Theme {
             },
             replace: Style {
                 fg: Some(Color::Green),
-                add_modifier: Modifier::BOLD,
-                ..Default::default()
-            },
-            flag_disabled: Style {
-                fg: Some(Color::Reset),
-                add_modifier: Modifier::CROSSED_OUT,
-                ..Default::default()
-            },
-            flag_enabled: Style {
-                fg: Some(Color::White),
                 add_modifier: Modifier::BOLD,
                 ..Default::default()
             },

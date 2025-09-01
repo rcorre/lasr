@@ -17,10 +17,11 @@ cargo install lasr
 
 # Usage
 
-Simply run `lasr` to start a search-and-replace in the current directory. You may run `lasr <path>` to search a different directory.
+Simply run `lasr` to start a search-and-replace in the current directory. You may run `lasr <path> [<path>...]` to search a specific directories or files.
 This will open a TUI where you can start typing a search pattern and see live matches below.
 Once you are happy with the search pattern, press <kbd>Tab</kbd> to start editing the replacement pattern.
-Finally,
+Finally, press <kbd>Enter</kbd> to confirm and execute the replacement, or <kbd>Esc</kbd> to cancel the replacement.
+You can press <kbd>Ctrl+S</kbd> to toggle case-insensitive searching, or pass the `-i` flag to enable case-insensitive search on startup.
 
 # Syntax
 
@@ -54,22 +55,23 @@ add_modifier = "BOLD"
 
 [keys]
 c-b = "cursor_left"
-backspace = "delete_char_backward"
-enter = "confirm"
-c-e = "cursor_end"
-c-u = "delete_line"
-right = "cursor_right"
-end = "cursor_end"
+c-s = "toggle_ignore_case"
+tab = "toggle_search_replace"
 left = "cursor_left"
 home = "cursor_home"
-c-h = "delete_char_backward"
+c-e = "cursor_end"
 c-d = "delete_char"
-c-f = "cursor_right"
+right = "cursor_right"
+c-h = "delete_char_backward"
+enter = "confirm"
+backspace = "delete_char_backward"
 c-k = "delete_to_end_of_line"
 c-a = "cursor_home"
-tab = "toggle_search_replace"
-esc = "exit"
+end = "cursor_end"
+c-f = "cursor_right"
 c-c = "exit"
+esc = "exit"
+c-u = "delete_line"
 c-w = "delete_word"
 ```
 
@@ -78,7 +80,7 @@ c-w = "delete_word"
 The `theme` section of the config includes 3 "style" sub-sections:
 
 | Key       | Description                 |
-|-----------|---------------------------- |
+| --------- | --------------------------- |
 | `base`    | Most text/UI                |
 | `find`    | Text matched by the pattern |
 | `replace` | Replacement text            |
@@ -86,7 +88,7 @@ The `theme` section of the config includes 3 "style" sub-sections:
 A "style" has the following attributes
 
 | Key            | Description      |
-|----------------|------------------|
+| -------------- | ---------------- |
 | `fg`           | Foreground color |
 | `bg`           | Background color |
 | `add_modifier` | Add modifiers    |
@@ -133,21 +135,26 @@ The `keys` section specifies key bindings. Each key is a single character or key
 
 Each value in the `keys` section is one of the following actions:
 
-| Action                  | Description                                             | Default Key Binding                       |
-|-------------------------|-------------------------------------------------------- |-------------------------------------------|
-| `noop`                  | Do nothing, used to unbind a default key                |                                           |
-| `exit`                  | Exit without performing any replacement                 | <kbd>Esc</kbd>, <kbd>Ctrl+C</kbd>         |
-| `confirm`               | Exit and perform replacements                           | <kbd>Enter</kbd>                          |
-| `toggle_search_replace` | Switch focus between the "search" and "replace" inputs  | <kbd>Tab</kbd>                            |
-| `cursor_left`           | Move cursor left one character                          | <kbd>←</kbd>, <kbd>Ctrl+B</kbd>           |
-| `cursor_right`          | Move cursor right one character                         | <kbd>→</kbd>, <kbd>Ctrl+F</kbd>           |
-| `cursor_home`           | Move cursor to beginning of line                        | <kbd>Home</kbd>, <kbd>Ctrl+A</kbd>        |
-| `cursor_end`            | Move cursor to end of line                              | <kbd>End</kbd>, <kbd>Ctrl+E</kbd>         |
-| `delete_char`           | Delete character at cursor position                     | <kbd>Ctrl+D</kbd>                         |
-| `delete_char_backward`  | Delete character before cursor (backspace)              | <kbd>Backspace</kbd>, <kbd>Ctrl+H</kbd>   |
-| `delete_word`           | Delete word before cursor                               | <kbd>Ctrl+W</kbd>                         |
-| `delete_to_end_of_line` | Delete from cursor to end of line                       | <kbd>Ctrl+K</kbd>                         |
-| `delete_line`           | Delete entire line                                      | <kbd>Ctrl+U</kbd>                         |
+| Action                  | Description                                            | Default Key Binding                     |
+| ----------------------- | ------------------------------------------------------ | --------------------------------------- |
+| `noop`                  | Do nothing, used to unbind a default key               |                                         |
+| `exit`                  | Exit without performing any replacement                | <kbd>Esc</kbd>, <kbd>Ctrl+C</kbd>       |
+| `confirm`               | Exit and perform replacements                          | <kbd>Enter</kbd>                        |
+| `toggle_search_replace` | Switch focus between the "search" and "replace" inputs | <kbd>Tab</kbd>                          |
+| `toggle_ignore_case   ` | Toggle ignore case flag                                | <kbd>Ctrl+S</kbd>                       |
+| `cursor_left`           | Move cursor left one character                         | <kbd>←</kbd>, <kbd>Ctrl+B</kbd>         |
+| `cursor_right`          | Move cursor right one character                        | <kbd>→</kbd>, <kbd>Ctrl+F</kbd>         |
+| `cursor_home`           | Move cursor to beginning of line                       | <kbd>Home</kbd>, <kbd>Ctrl+A</kbd>      |
+| `cursor_end`            | Move cursor to end of line                             | <kbd>End</kbd>, <kbd>Ctrl+E</kbd>       |
+| `delete_char`           | Delete character at cursor position                    | <kbd>Ctrl+D</kbd>                       |
+| `delete_char_backward`  | Delete character before cursor (backspace)             | <kbd>Backspace</kbd>, <kbd>Ctrl+H</kbd> |
+| `delete_word`           | Delete word before cursor                              | <kbd>Ctrl+W</kbd>                       |
+| `delete_to_end_of_line` | Delete from cursor to end of line                      | <kbd>Ctrl+K</kbd>                       |
+| `delete_line`           | Delete entire line                                     | <kbd>Ctrl+U</kbd>                       |
+
+# Troubleshooting
+
+Logs are located at `$XDG_CACHE_HOME/lasr/log.txt`. Log verbosity can be increased by setting the environment variable `RUST_LOG` to `debug` or `trace`. See [env_logger](https://docs.rs/env_logger/latest/env_logger/) for more info.
 
 # Other cool search/replace tools
 

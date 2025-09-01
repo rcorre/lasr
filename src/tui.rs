@@ -97,7 +97,12 @@ impl App {
         });
     }
 
-    pub fn new(path: impl Into<PathBuf>, config: Config, event_rx: Receiver<Event>) -> Self {
+    pub fn new(
+        path: impl Into<PathBuf>,
+        config: Config,
+        event_rx: Receiver<Event>,
+        ignore_case: bool,
+    ) -> Self {
         let path = path.into();
 
         Self {
@@ -111,7 +116,7 @@ impl App {
             editing_pattern: true,
             re: None,
             replacement: "".to_string(),
-            ignore_case: false,
+            ignore_case,
         }
     }
 
@@ -423,7 +428,7 @@ mod tests {
         fn with_dir(path: &Path) -> Self {
             let (event_tx, event_rx) = bounded(1);
             Test {
-                app: App::new(path, Config::default(), event_rx),
+                app: App::new(path, Config::default(), event_rx, false),
                 event_tx,
             }
         }

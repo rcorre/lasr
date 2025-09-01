@@ -25,7 +25,7 @@ pub struct Cli {
     /// Print the current config to stdout and exit
     dump_config: bool,
 
-    #[arg(long)]
+    #[arg(short, long)]
     /// Whether to start with the ignore-case option enabled
     ignore_case: bool,
 }
@@ -103,7 +103,7 @@ fn main() -> Result<()> {
         }
     });
     {
-        let mut app = App::new(cli.path.unwrap_or(".".into()), config, rx);
+        let mut app = App::new(cli.path.unwrap_or(".".into()), config, rx, cli.ignore_case);
         app.run(&mut terminal)?;
     }
 
