@@ -22,6 +22,8 @@ pub enum Action {
     DeleteWord,
     DeleteToEndOfLine,
     DeleteLine,
+    ScrollDown,
+    ScrollUp,
 }
 
 #[derive(Debug, PartialOrd, PartialEq, Eq, Clone, Copy, Hash, Serialize, Deserialize)]
@@ -234,6 +236,8 @@ impl Default for Config {
                 ("c-w", Action::DeleteWord),
                 ("c-k", Action::DeleteToEndOfLine),
                 ("c-u", Action::DeleteLine),
+                ("c-n", Action::ScrollDown),
+                ("c-p", Action::ScrollUp),
             ]
             .map(|(k, v)| (k.to_string().try_into().unwrap(), v))
             .into(),
@@ -271,20 +275,6 @@ mod tests {
 
             [keys]
             c-x = "exit"
-            left = "cursor_left"
-            c-b = "cursor_left"
-            right = "cursor_right"
-            c-f = "cursor_right"
-            home = "cursor_home"
-            c-a = "cursor_home"
-            end = "cursor_end"
-            c-e = "cursor_end"
-            backspace = "delete_char_backward"
-            c-h = "delete_char_backward"
-            c-d = "delete_char"
-            c-w = "delete_word"
-            c-k = "delete_to_end_of_line"
-            c-u = "delete_line"
         }
         .to_string();
 
@@ -317,7 +307,6 @@ mod tests {
                         add_modifier: Modifier::BOLD,
                         ..Default::default()
                     },
-                    ..Default::default()
                 }
             }
         )

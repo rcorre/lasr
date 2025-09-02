@@ -17,6 +17,9 @@ use ratatui::{
 use regex::{Regex, RegexBuilder};
 use tracing::{debug, info, trace, warn};
 
+// How many off-screen results to pre-populate
+const SEARCH_BUFFER: usize = 3;
+
 #[derive(Debug)]
 struct LineSubstitution {
     line_number: u64,
@@ -76,6 +79,7 @@ pub struct App {
     re: Option<Regex>,
     replacement: String,
     ignore_case: bool,
+    scroll: usize,
 }
 
 enum State {
@@ -117,6 +121,7 @@ impl App {
             re: None,
             replacement: "".to_string(),
             ignore_case,
+            scroll: 0,
         }
     }
 
@@ -230,6 +235,7 @@ impl App {
         let constraints: Vec<_> = self
             .subs
             .iter()
+            .skip(self.scroll)
             .map(|s| (s.subs.len() + 2) as u16) // +2 for top/bottom border
             .take_while(|s| {
                 let ret = size_left > 0;
@@ -243,7 +249,8 @@ impl App {
             return Ok(false);
         };
         let search_areas = Layout::vertical(constraints.as_slice()).split(search_area);
-        for (area, sub) in search_areas.iter().zip(self.subs.iter()) {
+        let subs = self.subs.iter().skip(self.scroll);
+        for (area, sub) in search_areas.iter().zip(subs) {
             let table = Table::new(
                 sub.subs.iter().map(|s| {
                     Row::new(vec![
@@ -267,7 +274,9 @@ impl App {
         }
 
         trace!("Draw complete");
-        Ok(size_left > 0)
+        // Pause searching once we're showing all the results we can on the screen,
+        // Plus a few buffered results (so scrolling is instant)
+        Ok(self.subs.len() < search_areas.len() + SEARCH_BUFFER + self.scroll)
     }
 
     fn on_finding(&mut self, finding: FileMatch) -> Result<()> {
@@ -371,6 +380,18 @@ impl App {
                 Action::ToggleIgnoreCase => {
                     self.ignore_case = !self.ignore_case;
                     self.update_pattern();
+                    return Ok(State::Continue);
+                }
+                Action::ScrollDown => {
+                    if self.scroll < self.subs.len() - 1 {
+                        self.scroll += 1;
+                        info!("Scrolled to: {}", self.scroll);
+                    }
+                    return Ok(State::Continue);
+                }
+                Action::ScrollUp => {
+                    self.scroll = self.scroll.saturating_sub(1);
+                    info!("Scrolled to: {}", self.scroll);
                     return Ok(State::Continue);
                 }
                 _ => {}
