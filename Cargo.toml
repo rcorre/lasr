@@ -26,6 +26,7 @@ ignore = "0.4.23"
 etcetera = "0.10.0"
 toml = "0.9.5"
 serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.143"
 
 [dev-dependencies]
 insta = { version = "1.43.1", features = ["filters"] }

@@ -2,8 +2,8 @@ use std::{ops::Range, path::PathBuf};
 
 use super::input::LineInput;
 use crate::{
+    ast_search::{self, FileMatch},
     config::{Action, Config, Theme},
-    search::{self, FileMatch},
 };
 use anyhow::{Context, Result};
 use crossbeam::channel::{Receiver, RecvError, bounded, never, select_biased};
@@ -99,7 +99,8 @@ impl App {
         let ignore_case = self.ignore_case;
         let types = self.types.clone();
         std::thread::spawn(move || -> Result<()> {
-            search::search(pattern, paths, ignore_case, tx, types).context("Search thread error")
+            ast_search::search(pattern, paths, ignore_case, tx, types)
+                .context("Search thread error")
         });
     }
 
