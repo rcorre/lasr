@@ -1,17 +1,17 @@
 ---
 source: src/tui.rs
-expression: terminal.backend()
+expression: "scrub_tmp(&tmp, terminal.backend())"
 ---
 "                                        "
 " ┌Search─────┐         ┌Replace───────┐ "
 " │line       │ < tab > │replacement   │ "
 " └───────────┘         └──────────────┘ "
-" ┌dir1/file2.txt──────────────────────┐ "
+" ┌<TMP>/dir1/file2.txt──────┐ "
 " │1      The first replacement.       │ "
 " │2      The second replacement.      │ "
 " │3      The third replacement.       │ "
 " └────────────────────────────────────┘ "
-" ┌file1.txt───────────────────────────┐ "
+" ┌<TMP>/file1.txt───────────┐ "
 " │1      This is replacement one.     │ "
 " │2      This is replacement two.     │ "
 " │3      This is replacement three.   │ "

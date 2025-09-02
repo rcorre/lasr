@@ -13,8 +13,8 @@ use tracing_subscriber::{Layer as _, layer::SubscriberExt as _, util::Subscriber
 #[command(version, about, long_about = None)]
 #[command(propagate_version = true)]
 pub struct Cli {
-    /// Path to search, defaults to "."
-    path: Option<PathBuf>,
+    /// Paths to search, defaults to "."
+    paths: Vec<PathBuf>,
 
     #[arg(short, long)]
     /// Path to the config file, defaults to $XDG_CONFIG_HOME/lasr/lasr.toml (~/.config/lasr/lasr.toml).
@@ -103,7 +103,7 @@ fn main() -> Result<()> {
         }
     });
     {
-        let mut app = App::new(cli.path.unwrap_or(".".into()), config, rx, cli.ignore_case);
+        let mut app = App::new(cli.paths, config, rx, cli.ignore_case);
         app.run(&mut terminal)?;
     }
 

@@ -67,7 +67,7 @@ impl LineSubstitution {
 }
 
 pub struct App {
-    path: PathBuf,
+    paths: Vec<PathBuf>,
     config: Config,
     subs: Vec<FileSubstitution>,
     search_rx: Option<Receiver<FileMatch>>,
@@ -93,24 +93,27 @@ impl App {
         // blocking channel to pause the search when we aren't ready for more results
         let (tx, rx) = bounded(0);
         let pattern = self.pattern_input.pattern().to_string();
-        let path = self.path.clone();
+        let paths = self.paths.clone();
         self.search_rx.replace(rx);
         let ignore_case = self.ignore_case;
         std::thread::spawn(move || -> Result<()> {
-            search::search(pattern, path, ignore_case, tx).context("Search thread error")
+            search::search(pattern, paths, ignore_case, tx).context("Search thread error")
         });
     }
 
     pub fn new(
-        path: impl Into<PathBuf>,
+        paths: Vec<PathBuf>,
         config: Config,
         event_rx: Receiver<Event>,
         ignore_case: bool,
     ) -> Self {
-        let path = path.into();
-
+        let paths = if paths.is_empty() {
+            vec![".".into()]
+        } else {
+            paths
+        };
         Self {
-            path,
+            paths,
             config,
             pattern_input: LineInput::default(),
             replacement_input: LineInput::default(),
@@ -261,14 +264,7 @@ impl App {
                 &[Constraint::Max(6), Constraint::Fill(1)],
             )
             .style(theme.base)
-            .block(
-                Block::bordered().title_top(
-                    sub.path
-                        .strip_prefix(&self.path)
-                        .unwrap_or(&sub.path)
-                        .to_string_lossy(),
-                ),
-            );
+            .block(Block::bordered().title_top(sub.path.to_string_lossy()));
             let mut table_state = TableState::default();
             frame.render_stateful_widget(table, *area, &mut table_state);
         }
@@ -425,7 +421,7 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::{fmt::Display, path::Path};
 
     use crate::config::Config;
 
@@ -449,7 +445,7 @@ mod tests {
         fn with_dir(path: &Path) -> Self {
             let (event_tx, event_rx) = bounded(1);
             Test {
-                app: App::new(path, Config::default(), event_rx, false),
+                app: App::new(vec![path.into()], Config::default(), event_rx, false),
                 event_tx,
             }
         }
@@ -462,6 +458,12 @@ mod tests {
                 self.app.handle_events(true).unwrap();
             }
         }
+    }
+
+    fn scrub_tmp(tmp: &impl AsRef<Path>, s: impl Display) -> String {
+        let s = format!("{s}");
+        let tmp = tmp.as_ref().to_str().unwrap();
+        s.replace(tmp, "<TMP>")
     }
 
     fn stage_files() -> tempfile::TempDir {
@@ -546,10 +548,12 @@ mod tests {
     // TODO: Show when results are truncated
     fn test_search_results_full() {
         let mut test = Test::new();
-        test.input("line");
+        test.input("aaa");
         // Use a smaller y size, so the results fill the page
         let mut terminal = Terminal::new(TestBackend::new(40, 12)).unwrap();
 
+        test.app.handle_events(true).unwrap();
+        test.app.handle_events(true).unwrap();
         test.app.handle_events(true).unwrap();
 
         terminal
@@ -591,7 +595,7 @@ mod tests {
                 assert!(test.app.draw(frame).unwrap(), "Should need more results");
             })
             .unwrap();
-        assert_snapshot!(terminal.backend());
+        assert_snapshot!(scrub_tmp(&tmp, terminal.backend()));
 
         test.app.replace_all().unwrap();
 
@@ -637,7 +641,7 @@ The third replacement.
                 assert!(test.app.draw(frame).unwrap(), "Should need more results");
             })
             .unwrap();
-        assert_snapshot!(terminal.backend());
+        assert_snapshot!(scrub_tmp(&tmp, terminal.backend()));
 
         test.app.replace_all().unwrap();
 

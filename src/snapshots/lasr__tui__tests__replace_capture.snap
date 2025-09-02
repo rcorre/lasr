@@ -1,12 +1,12 @@
 ---
 source: src/tui.rs
-expression: terminal.backend()
+expression: "scrub_tmp(&tmp, terminal.backend())"
 ---
 "                                        "
 " ┌Search─────┐         ┌Replace───────┐ "
 " │This is    │ < tab > │${0}n't       │ "
 " └───────────┘         └──────────────┘ "
-" ┌file1.txt───────────────────────────┐ "
+" ┌<TMP>/file1.txt───────────┐ "
 " │1      This isn't line one.         │ "
 " │2      This isn't line two.         │ "
 " │3      This isn't line three.       │ "

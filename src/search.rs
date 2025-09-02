@@ -62,7 +62,7 @@ fn walk(
 
 pub fn search(
     pattern: String,
-    path: PathBuf,
+    paths: Vec<PathBuf>,
     ignore_case: bool,
     tx: Sender<FileMatch>,
 ) -> Result<()> {
@@ -74,27 +74,31 @@ pub fn search(
         .case_insensitive(ignore_case)
         .build(&pattern)
         .with_context(|| format!("Failed to compile searcher with pattern: {pattern}"))?;
+
     let searcher = SearcherBuilder::new()
         .binary_detection(BinaryDetection::quit(0))
         .build();
-    ignore::WalkBuilder::new(path)
-        .sort_by_file_name(|a, b| a.cmp(b))
-        .threads(0)
-        .build_parallel()
-        .run(move || {
-            let tx = tx.clone();
-            let mut searcher = searcher.clone();
-            let matcher = matcher.clone();
-            Box::new(move |path| -> WalkState {
-                match walk(&matcher, &mut searcher, path, &tx) {
-                    Ok(state) => state,
-                    Err(e) => {
-                        warn!("Search error: {e}");
-                        WalkState::Continue
-                    }
+
+    let mut builder = ignore::WalkBuilder::new(&paths[0]);
+    builder.sort_by_file_name(|a, b| a.cmp(b)).threads(0);
+    for path in paths.iter().skip(1) {
+        builder.add(path);
+    }
+
+    builder.build_parallel().run(move || {
+        let tx = tx.clone();
+        let mut searcher = searcher.clone();
+        let matcher = matcher.clone();
+        Box::new(move |path| -> WalkState {
+            match walk(&matcher, &mut searcher, path, &tx) {
+                Ok(state) => state,
+                Err(e) => {
+                    warn!("Search error: {e}");
+                    WalkState::Continue
                 }
-            })
-        });
+            }
+        })
+    });
 
     Ok(())
 }
@@ -111,7 +115,7 @@ mod tests {
     fn test_search() {
         let (tx, rx) = unbounded();
 
-        search("line".into(), "testdata".into(), false, tx).unwrap();
+        search("line".into(), vec!["testdata".into()], false, tx).unwrap();
 
         let mut results: Vec<_> = rx.iter().collect();
         results.sort_by(|a, b| a.path.cmp(&b.path));
@@ -164,7 +168,7 @@ mod tests {
     fn test_search_ignore_case() {
         let (tx, rx) = unbounded();
 
-        search("the".into(), "testdata".into(), true, tx).unwrap();
+        search("the".into(), vec!["testdata".into()], true, tx).unwrap();
         let mut results: Vec<_> = rx.iter().collect();
         results.sort_by(|a, b| a.path.cmp(&b.path));
 
