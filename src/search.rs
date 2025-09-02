@@ -1,11 +1,12 @@
 use anyhow::{Context, Result};
 use crossbeam::channel::Sender;
 use grep::{
-    regex::RegexMatcherBuilder,
-    searcher::{BinaryDetection, SearcherBuilder, sinks},
+    regex::{RegexMatcher, RegexMatcherBuilder},
+    searcher::{BinaryDetection, Searcher, SearcherBuilder, sinks},
 };
+use ignore::WalkState;
 use std::path::PathBuf;
-use tracing::debug;
+use tracing::{debug, warn};
 
 #[derive(Debug, PartialEq)]
 pub struct LineMatch {
@@ -17,6 +18,46 @@ pub struct LineMatch {
 pub struct FileMatch {
     pub path: PathBuf,
     pub lines: Vec<LineMatch>,
+}
+
+fn walk(
+    matcher: &RegexMatcher,
+    searcher: &mut Searcher,
+    path: Result<ignore::DirEntry, ignore::Error>,
+    tx: &Sender<FileMatch>,
+) -> Result<WalkState> {
+    debug!("Searching path {path:?}");
+    let path = path?;
+    let meta = path.metadata()?;
+    if !meta.is_file() {
+        return Ok(WalkState::Continue);
+    };
+    let mut lines = vec![];
+    searcher.search_path(
+        matcher,
+        path.path(),
+        sinks::UTF8(|number, text| {
+            lines.push(LineMatch {
+                number,
+                text: text.to_string(),
+            });
+            Ok(true)
+        }),
+    )?;
+    if lines.is_empty() {
+        return Ok(WalkState::Continue);
+    }
+    if tx
+        .send(FileMatch {
+            path: path.into_path(),
+            lines,
+        })
+        .is_err()
+    {
+        debug!("TX closed, ending search thread");
+        return Ok(WalkState::Quit);
+    }
+    Ok(WalkState::Continue)
 }
 
 pub fn search(
@@ -33,46 +74,27 @@ pub fn search(
         .case_insensitive(ignore_case)
         .build(&pattern)
         .with_context(|| format!("Failed to compile searcher with pattern: {pattern}"))?;
-    let mut searcher = SearcherBuilder::new()
+    let searcher = SearcherBuilder::new()
         .binary_detection(BinaryDetection::quit(0))
         .build();
-    let walk = ignore::WalkBuilder::new(path)
+    ignore::WalkBuilder::new(path)
         .sort_by_file_name(|a, b| a.cmp(b))
-        .build();
-    for path in walk {
-        debug!("Searching  path {path:?}");
-        let path = path?;
-        let meta = path.metadata()?;
-        if meta.is_file() {
-            let mut lines = vec![];
-            if let Err(e) = searcher.search_path(
-                &matcher,
-                path.path(),
-                sinks::UTF8(|number, text| {
-                    lines.push(LineMatch {
-                        number,
-                        text: text.to_string(),
-                    });
-                    Ok(true)
-                }),
-            ) {
-                // Probably invalid UTF-8
-                debug!("Failed to search {path:?}: {e:?}");
-                continue;
-            };
-            if !lines.is_empty()
-                && tx
-                    .send(FileMatch {
-                        path: path.into_path(),
-                        lines,
-                    })
-                    .is_err()
-            {
-                debug!("TX closed, ending search thread");
-                return Ok(());
-            }
-        }
-    }
+        .threads(0)
+        .build_parallel()
+        .run(move || {
+            let tx = tx.clone();
+            let mut searcher = searcher.clone();
+            let matcher = matcher.clone();
+            Box::new(move |path| -> WalkState {
+                match walk(&matcher, &mut searcher, path, &tx) {
+                    Ok(state) => state,
+                    Err(e) => {
+                        warn!("Search error: {e}");
+                        WalkState::Continue
+                    }
+                }
+            })
+        });
 
     Ok(())
 }
