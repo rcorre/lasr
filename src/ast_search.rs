@@ -1,9 +1,9 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
+use ast_grep_core::language::Language;
+use ast_grep_language::{LanguageExt, SupportLang};
 use crossbeam::channel::Sender;
 use ignore::WalkState;
-use serde_json;
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
 use tracing::{debug, trace, warn};
 
 #[derive(Debug, PartialEq)]
@@ -20,7 +20,6 @@ pub struct FileMatch {
 
 fn walk(
     pattern: &str,
-    ignore_case: bool,
     path: Result<ignore::DirEntry, ignore::Error>,
     tx: &Sender<FileMatch>,
 ) -> Result<WalkState> {
@@ -31,72 +30,32 @@ fn walk(
         return Ok(WalkState::Continue);
     }
 
-    let file_path = path.path();
+    let path = path.path();
 
-    // Run ast-grep on the file
-    let mut cmd = Command::new("ast-grep");
-    cmd.arg("--pattern").arg(pattern);
-
-    if ignore_case {
-        // ast-grep doesn't have a direct ignore-case flag, but we can modify the pattern
-        // This is a simplified approach - in practice you might want more sophisticated handling
-    }
-
-    cmd.arg("--json=compact")
-        .arg(file_path)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-    let output = match cmd.output() {
-        Ok(output) => output,
-        Err(e) => {
-            debug!("Failed to run ast-grep on {}: {}", file_path.display(), e);
-            return Ok(WalkState::Continue);
-        }
+    let Some(lang) = SupportLang::from_path(path) else {
+        trace!("No AST language for {path:?}");
+        return Ok(WalkState::Continue);
     };
 
-    if !output.status.success() {
-        debug!(
-            "ast-grep failed on {}: {}",
-            file_path.display(),
-            String::from_utf8_lossy(&output.stderr)
-        );
+    let src = std::fs::read_to_string(path).with_context(|| format!("Reading {path:?}"))?;
+    let root = lang.ast_grep(src);
+    let matches: Vec<_> = root.root().find_all(pattern).collect();
+
+    if matches.is_empty() {
         return Ok(WalkState::Continue);
     }
 
-    let output_str = String::from_utf8_lossy(&output.stdout);
-    if output_str.trim().is_empty() {
-        return Ok(WalkState::Continue);
-    }
-
-    // Parse ast-grep JSON output
-    let mut lines = vec![];
-    for line in output_str.lines() {
-        trace!("Parsing ast-grep line {line}");
-        if let Ok(match_result) = serde_json::from_str::<serde_json::Value>(line) {
-            if let (Some(line_num), Some(text)) = (
-                match_result
-                    .get("range")
-                    .and_then(|r| r.get("start"))
-                    .and_then(|s| s.get("line"))
-                    .and_then(|l| l.as_u64()),
-                match_result.get("text").and_then(|t| t.as_str()),
-            ) {
-                lines.push(LineMatch {
-                    number: line_num + 1, // ast-grep uses 0-based line numbers
-                    text: format!("{}\n", text),
-                });
-            }
-        }
-    }
-
-    if lines.is_empty() {
-        return Ok(WalkState::Continue);
-    }
+    let lines = matches
+        .iter()
+        .map(|m| LineMatch {
+            number: m.start_pos().line() as u64,
+            text: m.text().into(),
+        })
+        .collect();
 
     if tx
         .send(FileMatch {
-            path: path.into_path(),
+            path: path.into(),
             lines,
         })
         .is_err()
@@ -130,7 +89,7 @@ pub fn search(
         let tx = tx.clone();
         let pattern = pattern.clone();
         Box::new(move |path| -> WalkState {
-            match walk(&pattern, ignore_case, path, &tx) {
+            match walk(&pattern, path, &tx) {
                 Ok(state) => state,
                 Err(e) => {
                     warn!("Search error: {e}");
