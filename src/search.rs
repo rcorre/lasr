@@ -65,6 +65,7 @@ pub fn search(
     paths: Vec<PathBuf>,
     ignore_case: bool,
     tx: Sender<FileMatch>,
+    types: ignore::types::Types,
 ) -> Result<()> {
     debug!("Starting search with pattern: '{pattern}', ignore_case: {ignore_case}");
 
@@ -80,7 +81,10 @@ pub fn search(
         .build();
 
     let mut builder = ignore::WalkBuilder::new(&paths[0]);
-    builder.sort_by_file_name(|a, b| a.cmp(b)).threads(0);
+    builder
+        .sort_by_file_name(|a, b| a.cmp(b))
+        .threads(0)
+        .types(types);
     for path in paths.iter().skip(1) {
         builder.add(path);
     }
@@ -110,12 +114,28 @@ mod tests {
 
     use super::*;
 
+    fn types(t: &[&str]) -> ignore::types::Types {
+        let mut types = ignore::types::TypesBuilder::new();
+        types.add_defaults();
+        for t in t {
+            types.select(t);
+        }
+        types.build().unwrap()
+    }
+
     #[test]
     #[tracing_test::traced_test]
     fn test_search() {
         let (tx, rx) = unbounded();
 
-        search("line".into(), vec!["testdata".into()], false, tx).unwrap();
+        search(
+            "line".into(),
+            vec!["testdata".into()],
+            false,
+            tx,
+            types(&[]),
+        )
+        .unwrap();
 
         let mut results: Vec<_> = rx.iter().collect();
         results.sort_by(|a, b| a.path.cmp(&b.path));
@@ -168,7 +188,7 @@ mod tests {
     fn test_search_ignore_case() {
         let (tx, rx) = unbounded();
 
-        search("the".into(), vec!["testdata".into()], true, tx).unwrap();
+        search("the".into(), vec!["testdata".into()], true, tx, types(&[])).unwrap();
         let mut results: Vec<_> = rx.iter().collect();
         results.sort_by(|a, b| a.path.cmp(&b.path));
 
@@ -190,6 +210,36 @@ mod tests {
                         text: "The third line.\n".into(),
                     },
                 ],
+            },]
+        );
+
+        assert_eq!(rx.recv(), Err(RecvError));
+    }
+
+    #[test]
+    #[tracing_test::traced_test]
+    fn test_search_file_types() {
+        let (tx, rx) = unbounded();
+
+        search(
+            "First".into(),
+            vec!["testdata".into()],
+            true,
+            tx,
+            types(&["md"]),
+        )
+        .unwrap();
+        let mut results: Vec<_> = rx.iter().collect();
+        results.sort_by(|a, b| a.path.cmp(&b.path));
+
+        assert_eq!(
+            results,
+            [FileMatch {
+                path: "testdata/example.md".into(),
+                lines: vec![LineMatch {
+                    number: 1,
+                    text: "# First heading\n".into(),
+                },],
             },]
         );
 

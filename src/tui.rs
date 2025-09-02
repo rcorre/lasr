@@ -68,6 +68,7 @@ impl LineSubstitution {
 
 pub struct App {
     paths: Vec<PathBuf>,
+    types: ignore::types::Types,
     config: Config,
     subs: Vec<FileSubstitution>,
     search_rx: Option<Receiver<FileMatch>>,
@@ -96,13 +97,15 @@ impl App {
         let paths = self.paths.clone();
         self.search_rx.replace(rx);
         let ignore_case = self.ignore_case;
+        let types = self.types.clone();
         std::thread::spawn(move || -> Result<()> {
-            search::search(pattern, paths, ignore_case, tx).context("Search thread error")
+            search::search(pattern, paths, ignore_case, tx, types).context("Search thread error")
         });
     }
 
     pub fn new(
         paths: Vec<PathBuf>,
+        types: ignore::types::Types,
         config: Config,
         event_rx: Receiver<Event>,
         ignore_case: bool,
@@ -114,6 +117,7 @@ impl App {
         };
         Self {
             paths,
+            types,
             config,
             pattern_input: LineInput::default(),
             replacement_input: LineInput::default(),
@@ -445,7 +449,16 @@ mod tests {
         fn with_dir(path: &Path) -> Self {
             let (event_tx, event_rx) = bounded(1);
             Test {
-                app: App::new(vec![path.into()], Config::default(), event_rx, false),
+                app: App::new(
+                    vec![path.into()],
+                    ignore::types::TypesBuilder::new()
+                        .add_defaults()
+                        .build()
+                        .unwrap(),
+                    Config::default(),
+                    event_rx,
+                    false,
+                ),
                 event_tx,
             }
         }

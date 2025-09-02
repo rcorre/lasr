@@ -28,6 +28,14 @@ pub struct Cli {
     #[arg(short, long)]
     /// Whether to start with the ignore-case option enabled
     ignore_case: bool,
+
+    #[arg(short, long = "type", default_values_t=["all".to_string()])]
+    /// File types to search, use --type-list to view available types
+    types: Vec<String>,
+
+    #[arg(long)]
+    /// List all file types available to -t
+    type_list: bool,
 }
 
 fn strategy() -> AppStrategyArgs {
@@ -80,12 +88,35 @@ fn main() -> Result<()> {
     initialize_logging()?;
 
     let cli = Cli::parse();
+
+    if cli.type_list {
+        let mut types = ignore::types::TypesBuilder::new();
+        types.add_defaults();
+        for def in types.build()?.definitions() {
+            println!("{}: {:?}", def.name(), def.globs());
+        }
+        return Ok(());
+    }
+
     let config = load_config(cli.config_path)?;
 
     if cli.dump_config {
         print!("{}", toml::to_string_pretty(&config)?);
         return Ok(());
     }
+
+    let mut types = ignore::types::TypesBuilder::new();
+    types.add_defaults();
+    for t in cli.types {
+        types.select(&t);
+    }
+    let types = match types.build() {
+        Ok(types) => types,
+        Err(err) => {
+            eprintln!("{err}");
+            return Ok(());
+        }
+    };
 
     let mut terminal = ratatui::init();
     crossterm::execute!(
@@ -103,7 +134,7 @@ fn main() -> Result<()> {
         }
     });
     {
-        let mut app = App::new(cli.paths, config, rx, cli.ignore_case);
+        let mut app = App::new(cli.paths, types, config, rx, cli.ignore_case);
         app.run(&mut terminal)?;
     }
 
