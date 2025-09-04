@@ -24,6 +24,7 @@ pub enum Action {
     DeleteLine,
     ScrollDown,
     ScrollUp,
+    ScrollTop,
 }
 
 #[derive(Debug, PartialOrd, PartialEq, Eq, Clone, Copy, Hash, Serialize, Deserialize)]
@@ -238,6 +239,7 @@ impl Default for Config {
                 ("c-u", Action::DeleteLine),
                 ("c-n", Action::ScrollDown),
                 ("c-p", Action::ScrollUp),
+                ("c-g", Action::ScrollTop),
             ]
             .map(|(k, v)| (k.to_string().try_into().unwrap(), v))
             .into(),

@@ -394,6 +394,11 @@ impl App {
                     info!("Scrolled to: {}", self.scroll);
                     return Ok(State::Continue);
                 }
+                Action::ScrollTop => {
+                    self.scroll = 0;
+                    info!("Scrolled to: {}", self.scroll);
+                    return Ok(State::Continue);
+                }
                 _ => {}
             }
         }
