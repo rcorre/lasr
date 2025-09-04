@@ -114,8 +114,28 @@ impl LineInput {
         // Fall back to character input if no action matched
         match key_event.code {
             KeyCode::Char(c) if (key_event.modifiers & !KeyModifiers::SHIFT).is_empty() => {
-                self.pattern.insert(self.cursor_pos, c);
+                if self.auto_pairs
+                    && ")}]".contains(c)
+                    && self
+                        .pattern
+                        .get(self.cursor_pos..self.cursor_pos + 1)
+                        .is_some_and(|x| x == c.to_string())
+                {
+                    // Matching pair already exists
+                } else {
+                    self.pattern.insert(self.cursor_pos, c);
+                }
                 self.cursor_pos += 1;
+                if self.auto_pairs {
+                    if let Some(pair) = match c {
+                        '(' => Some(')'),
+                        '{' => Some('}'),
+                        '[' => Some(']'),
+                        _ => None,
+                    } {
+                        self.pattern.insert(self.cursor_pos, pair);
+                    }
+                }
                 tracing::debug!("Updated filter pattern: {}", self.pattern);
                 Some(&self.pattern)
             }
@@ -210,6 +230,44 @@ mod tests {
         );
         assert_eq!(app.pattern, "");
         assert_eq!(app.cursor_pos, 0);
+    }
+
+    #[test]
+    #[tracing_test::traced_test]
+    fn test_auto_pairs() {
+        let mut app = LineInput::new(true);
+
+        assert_eq!(app.pattern, "");
+        assert_eq!(app.cursor_pos, 0);
+
+        input(&mut app, "(");
+        assert_eq!(app.pattern, "()");
+        assert_eq!(app.cursor_pos, 1);
+
+        input(&mut app, "abc");
+        assert_eq!(app.pattern, "(abc)");
+        assert_eq!(app.cursor_pos, 4);
+
+        input(&mut app, ")");
+        assert_eq!(app.pattern, "(abc)");
+        assert_eq!(app.cursor_pos, 5);
+    }
+
+    #[test]
+    #[tracing_test::traced_test]
+    fn test_auto_pairs_nested() {
+        let mut app = LineInput::new(true);
+
+        assert_eq!(app.pattern, "");
+        assert_eq!(app.cursor_pos, 0);
+
+        input(&mut app, "([{");
+        assert_eq!(app.pattern, "([{}])");
+        assert_eq!(app.cursor_pos, 3);
+
+        input(&mut app, "}])");
+        assert_eq!(app.pattern, "([{}])");
+        assert_eq!(app.cursor_pos, 6);
     }
 
     #[test]
