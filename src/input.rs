@@ -8,13 +8,21 @@ use ratatui::{
 };
 use std::collections::HashMap;
 
-#[derive(Default)]
 pub struct LineInput {
     pattern: String,
     cursor_pos: usize,
+    auto_pairs: bool,
 }
 
 impl LineInput {
+    pub fn new(auto_pairs: bool) -> Self {
+        Self {
+            pattern: "".into(),
+            cursor_pos: 0,
+            auto_pairs,
+        }
+    }
+
     // Returns true if the pattern changed
     pub fn handle_key_event(
         &mut self,
@@ -155,7 +163,7 @@ mod tests {
     #[test]
     #[tracing_test::traced_test]
     fn test_input() {
-        let mut app = LineInput::default();
+        let mut app = LineInput::new(false);
         let config = Config::default();
 
         assert_eq!(app.pattern, "");
@@ -207,7 +215,7 @@ mod tests {
     #[test]
     #[tracing_test::traced_test]
     fn test_delete_word() {
-        let mut app = LineInput::default();
+        let mut app = LineInput::new(false);
         let config = Config::default();
 
         input(&mut app, "abc def ghi");
@@ -262,7 +270,7 @@ mod tests {
     #[test]
     #[tracing_test::traced_test]
     fn test_cursor_movement() {
-        let mut app = LineInput::default();
+        let mut app = LineInput::new(false);
         let config = Config::default();
 
         input(&mut app, "abc def ghi");
@@ -311,7 +319,7 @@ mod tests {
     #[test]
     #[tracing_test::traced_test]
     fn test_cursor_input() {
-        let mut app = LineInput::default();
+        let mut app = LineInput::new(false);
         let config = Config::default();
 
         input(&mut app, "abc def ghi");
@@ -354,7 +362,7 @@ mod tests {
     #[test]
     #[tracing_test::traced_test]
     fn test_cursor_home() {
-        let mut app = LineInput::default();
+        let mut app = LineInput::new(false);
         let config = Config::default();
 
         input(&mut app, "hello world");
@@ -388,7 +396,7 @@ mod tests {
     #[test]
     #[tracing_test::traced_test]
     fn test_cursor_end() {
-        let mut app = LineInput::default();
+        let mut app = LineInput::new(false);
         let config = Config::default();
 
         input(&mut app, "hello world");
@@ -430,7 +438,7 @@ mod tests {
     #[test]
     #[tracing_test::traced_test]
     fn test_delete_char() {
-        let mut app = LineInput::default();
+        let mut app = LineInput::new(false);
         let config = Config::default();
 
         input(&mut app, "hello");
@@ -472,7 +480,7 @@ mod tests {
     #[test]
     #[tracing_test::traced_test]
     fn test_delete_to_end_of_line() {
-        let mut app = LineInput::default();
+        let mut app = LineInput::new(false);
         let config = Config::default();
 
         input(&mut app, "hello world");
@@ -510,7 +518,7 @@ mod tests {
     #[test]
     #[tracing_test::traced_test]
     fn test_delete_line() {
-        let mut app = LineInput::default();
+        let mut app = LineInput::new(false);
         let config = Config::default();
 
         input(&mut app, "hello world");
@@ -549,7 +557,7 @@ mod tests {
     #[test]
     #[tracing_test::traced_test]
     fn test_delete_char_backward() {
-        let mut app = LineInput::default();
+        let mut app = LineInput::new(false);
         let config = Config::default();
 
         input(&mut app, "hello");

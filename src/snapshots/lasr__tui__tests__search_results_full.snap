@@ -6,7 +6,7 @@ expression: terminal.backend()
 " ┌Search─────┐         ┌Replace───────┐ "
 " │aaa        │ < tab > │              │ "
 " └───────────┘         └──────────────┘ "
-" ┌testdata/aaa/aaa4.txt───────────────┐ "
+" ┌testdata/aaa/aaa1.txt───────────────┐ "
 " │1      aaa                          │ "
 " │2      aaa                          │ "
 " │3      aaa                          │ "

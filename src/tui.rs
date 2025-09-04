@@ -76,7 +76,6 @@ pub struct App {
     pattern_input: LineInput,
     replacement_input: LineInput,
     editing_pattern: bool,
-    // TODO: respect casing
     re: Option<Regex>,
     replacement: String,
     ignore_case: bool,
@@ -98,8 +97,10 @@ impl App {
         self.search_rx.replace(rx);
         let ignore_case = self.ignore_case;
         let types = self.types.clone();
+        let threads = self.config.threads;
         std::thread::spawn(move || -> Result<()> {
-            search::search(pattern, paths, ignore_case, tx, types).context("Search thread error")
+            search::search(pattern, paths, ignore_case, tx, types, threads)
+                .context("Search thread error")
         });
     }
 
@@ -118,9 +119,9 @@ impl App {
         Self {
             paths,
             types,
+            pattern_input: LineInput::new(config.auto_pairs),
+            replacement_input: LineInput::new(config.auto_pairs),
             config,
-            pattern_input: LineInput::default(),
-            replacement_input: LineInput::default(),
             search_rx: None,
             event_rx,
             subs: vec![],
@@ -460,7 +461,10 @@ mod tests {
                         .add_defaults()
                         .build()
                         .unwrap(),
-                    Config::default(),
+                    Config {
+                        threads: 1,
+                        ..Default::default()
+                    },
                     event_rx,
                     false,
                 ),

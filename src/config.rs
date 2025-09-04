@@ -211,6 +211,8 @@ impl Default for Theme {
 pub struct Config {
     pub theme: Theme,
     pub keys: HashMap<Key, Action>,
+    pub auto_pairs: bool,
+    pub threads: usize,
 }
 
 impl Default for Config {
@@ -243,6 +245,8 @@ impl Default for Config {
             ]
             .map(|(k, v)| (k.to_string().try_into().unwrap(), v))
             .into(),
+            auto_pairs: true,
+            threads: 0,
         }
     }
 }
@@ -270,6 +274,8 @@ mod tests {
     #[test]
     fn test_config_valid() {
         let t = toml::toml! {
+            auto_pairs = false
+
             [theme]
             base.fg = "6"
             find.fg = "#00FF00"
@@ -309,7 +315,9 @@ mod tests {
                         add_modifier: Modifier::BOLD,
                         ..Default::default()
                     },
-                }
+                },
+                auto_pairs: false,
+                threads: 0,
             }
         )
     }

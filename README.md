@@ -75,7 +75,16 @@ c-u = "delete_line"
 c-w = "delete_word"
 ```
 
-## Theme
+## General Config
+
+The following settings may be placed at the top-level of the config, not under any section:
+
+| Key          | Description                          | Default |
+| ------------ | ------------------------------------ | ------- |
+| `threads`    | Threads to use, 0 to auto-select     | `0`     |
+| `auto_pairs` | Auto-insert mathching pairs of `({[` | `true`  |
+
+## Theme Config
 
 The `theme` section of the config includes 3 "style" sub-sections:
 
@@ -111,7 +120,7 @@ A color can be an [ANSI color name] like `"red"`, an [ANSI 8-bit color index] li
 - `"HIDDEN"`
 - `"CROSSED_OUT"`
 
-## Keys
+## Keys Config
 
 The `keys` section specifies key bindings. Each key is a single character or key name, optionally followed by "c-" and/or "a-" to specify a ctrl or alt modifier. The following are valid key names:
 

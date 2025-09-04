@@ -66,6 +66,7 @@ pub fn search(
     ignore_case: bool,
     tx: Sender<FileMatch>,
     types: ignore::types::Types,
+    threads: usize,
 ) -> Result<()> {
     debug!("Starting search with pattern: '{pattern}', ignore_case: {ignore_case}");
 
@@ -83,7 +84,7 @@ pub fn search(
     let mut builder = ignore::WalkBuilder::new(&paths[0]);
     builder
         .sort_by_file_name(|a, b| a.cmp(b))
-        .threads(0)
+        .threads(threads)
         .types(types);
     for path in paths.iter().skip(1) {
         builder.add(path);
@@ -134,6 +135,7 @@ mod tests {
             false,
             tx,
             types(&[]),
+            1,
         )
         .unwrap();
 
@@ -188,7 +190,15 @@ mod tests {
     fn test_search_ignore_case() {
         let (tx, rx) = unbounded();
 
-        search("the".into(), vec!["testdata".into()], true, tx, types(&[])).unwrap();
+        search(
+            "the".into(),
+            vec!["testdata".into()],
+            true,
+            tx,
+            types(&[]),
+            1,
+        )
+        .unwrap();
         let mut results: Vec<_> = rx.iter().collect();
         results.sort_by(|a, b| a.path.cmp(&b.path));
 
@@ -227,6 +237,7 @@ mod tests {
             true,
             tx,
             types(&["md"]),
+            1,
         )
         .unwrap();
         let mut results: Vec<_> = rx.iter().collect();
