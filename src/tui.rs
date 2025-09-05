@@ -3,7 +3,7 @@ use std::{ops::Range, path::PathBuf};
 use super::input::LineInput;
 use crate::{
     config::{Action, Config, Theme},
-    search::{self, FileMatch},
+    search::{self, FileMatch, SearchParams},
 };
 use anyhow::{Context, Result};
 use crossbeam::channel::{Receiver, RecvError, bounded, never, select_biased};
@@ -79,6 +79,7 @@ pub struct App {
     re: Option<Regex>,
     replacement: String,
     ignore_case: bool,
+    multi_line: bool,
     scroll: usize,
 }
 
@@ -96,11 +97,20 @@ impl App {
         let paths = self.paths.clone();
         self.search_rx.replace(rx);
         let ignore_case = self.ignore_case;
+        let multi_line = self.multi_line;
         let types = self.types.clone();
         let threads = self.config.threads;
         std::thread::spawn(move || -> Result<()> {
-            search::search(pattern, paths, ignore_case, tx, types, threads)
-                .context("Search thread error")
+            search::search(SearchParams {
+                pattern,
+                paths,
+                ignore_case,
+                multi_line,
+                tx,
+                types,
+                threads,
+            })
+            .context("Search thread error")
         });
     }
 
@@ -110,6 +120,7 @@ impl App {
         config: Config,
         event_rx: Receiver<Event>,
         ignore_case: bool,
+        multi_line: bool,
     ) -> Self {
         let paths = if paths.is_empty() {
             vec![".".into()]
@@ -129,6 +140,7 @@ impl App {
             re: None,
             replacement: "".to_string(),
             ignore_case,
+            multi_line,
             scroll: 0,
         }
     }
@@ -198,16 +210,19 @@ impl App {
             ])
             .areas(input_area);
 
-        self.pattern_input.draw(
-            frame,
-            pattern_area,
-            if self.ignore_case {
-                "Search (i)"
-            } else {
-                "Search"
-            },
-            theme.base,
-        );
+        let mut flags = String::new();
+        if self.ignore_case {
+            flags += "i";
+        }
+        if self.multi_line {
+            flags += "m";
+        }
+        let mut search_header = "Search".to_string();
+        if !flags.is_empty() {
+            search_header = format!("{search_header} ({flags})");
+        }
+        self.pattern_input
+            .draw(frame, pattern_area, &search_header, theme.base);
         self.replacement_input
             .draw(frame, replace_area, "Replace", theme.base);
 
@@ -383,6 +398,11 @@ impl App {
                     self.update_pattern();
                     return Ok(State::Continue);
                 }
+                Action::ToggleMultiLine => {
+                    self.multi_line = !self.multi_line;
+                    self.update_pattern();
+                    return Ok(State::Continue);
+                }
                 Action::ScrollDown => {
                     if self.scroll < self.subs.len() - 1 {
                         self.scroll += 1;
@@ -466,6 +486,7 @@ mod tests {
                         ..Default::default()
                     },
                     event_rx,
+                    false,
                     false,
                 ),
                 event_tx,
