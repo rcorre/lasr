@@ -60,38 +60,58 @@ fn walk(
     Ok(WalkState::Continue)
 }
 
-pub fn search(
-    pattern: String,
-    paths: Vec<PathBuf>,
-    ignore_case: bool,
-    tx: Sender<FileMatch>,
-    types: ignore::types::Types,
-    threads: usize,
-) -> Result<()> {
-    debug!("Starting search with pattern: '{pattern}', ignore_case: {ignore_case}");
+#[derive(Debug)]
+pub struct SearchParams {
+    pub pattern: String,
+    pub paths: Vec<PathBuf>,
+    pub ignore_case: bool,
+    pub multi_line: bool,
+    pub tx: Sender<FileMatch>,
+    pub types: ignore::types::Types,
+    pub threads: usize,
+}
+
+pub fn search(params: SearchParams) -> Result<()> {
+    debug!("Starting search with params: {params:?}");
 
     let matcher = RegexMatcherBuilder::new()
-        .line_terminator(Some(b'\n'))
         .case_smart(false)
-        .case_insensitive(ignore_case)
-        .build(&pattern)
-        .with_context(|| format!("Failed to compile searcher with pattern: {pattern}"))?;
+        .case_insensitive(params.ignore_case)
+        .multi_line(params.multi_line)
+        .build(&params.pattern)
+        .with_context(|| format!("Failed to compile searcher with params: {params:?}"))?;
 
-    let searcher = SearcherBuilder::new()
+    let mut searcher = SearcherBuilder::new()
         .binary_detection(BinaryDetection::quit(0))
+        .multi_line(params.multi_line)
         .build();
 
-    let mut builder = ignore::WalkBuilder::new(&paths[0]);
+    let mut builder = ignore::WalkBuilder::new(&params.paths[0]);
     builder
         .sort_by_file_name(|a, b| a.cmp(b))
-        .threads(threads)
-        .types(types);
-    for path in paths.iter().skip(1) {
+        .threads(params.threads)
+        .types(params.types);
+    for path in params.paths.iter().skip(1) {
         builder.add(path);
     }
 
+    if params.threads == 1 {
+        for path in builder.build() {
+            match walk(&matcher, &mut searcher, path, &params.tx) {
+                Ok(WalkState::Quit) => {
+                    return Ok(());
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    warn!("Search error: {e}");
+                }
+            }
+        }
+        return Ok(());
+    }
+
     builder.build_parallel().run(move || {
-        let tx = tx.clone();
+        let tx = params.tx.clone();
         let mut searcher = searcher.clone();
         let matcher = matcher.clone();
         Box::new(move |path| -> WalkState {
@@ -129,14 +149,15 @@ mod tests {
     fn test_search() {
         let (tx, rx) = unbounded();
 
-        search(
-            "line".into(),
-            vec!["testdata".into()],
-            false,
+        search(SearchParams {
+            pattern: "line".into(),
+            paths: vec!["testdata".into()],
+            ignore_case: false,
+            multi_line: false,
             tx,
-            types(&[]),
-            1,
-        )
+            types: types(&[]),
+            threads: 1,
+        })
         .unwrap();
 
         let mut results: Vec<_> = rx.iter().collect();
@@ -190,14 +211,15 @@ mod tests {
     fn test_search_ignore_case() {
         let (tx, rx) = unbounded();
 
-        search(
-            "the".into(),
-            vec!["testdata".into()],
-            true,
+        search(SearchParams {
+            pattern: "the".into(),
+            paths: vec!["testdata".into()],
+            ignore_case: true,
+            multi_line: false,
             tx,
-            types(&[]),
-            1,
-        )
+            types: types(&[]),
+            threads: 1,
+        })
         .unwrap();
         let mut results: Vec<_> = rx.iter().collect();
         results.sort_by(|a, b| a.path.cmp(&b.path));
@@ -231,14 +253,15 @@ mod tests {
     fn test_search_file_types() {
         let (tx, rx) = unbounded();
 
-        search(
-            "First".into(),
-            vec!["testdata".into()],
-            true,
+        search(SearchParams {
+            pattern: "First".into(),
+            paths: vec!["testdata".into()],
+            ignore_case: true,
+            multi_line: false,
             tx,
-            types(&["md"]),
-            1,
-        )
+            types: types(&["md"]),
+            threads: 1,
+        })
         .unwrap();
         let mut results: Vec<_> = rx.iter().collect();
         results.sort_by(|a, b| a.path.cmp(&b.path));

@@ -26,8 +26,12 @@ pub struct Cli {
     dump_config: bool,
 
     #[arg(short, long)]
-    /// Whether to start with the ignore-case option enabled
+    /// Ignore case in matches
     ignore_case: bool,
+
+    #[arg(short, long)]
+    /// Matches can span multiple lines
+    multi_line: bool,
 
     #[arg(short, long = "type", default_values_t=["all".to_string()])]
     /// File types to search, use --type-list to view available types
@@ -134,7 +138,14 @@ fn main() -> Result<()> {
         }
     });
     {
-        let mut app = App::new(cli.paths, types, config, rx, cli.ignore_case);
+        let mut app = App::new(
+            cli.paths,
+            types,
+            config,
+            rx,
+            cli.ignore_case,
+            cli.multi_line,
+        );
         app.run(&mut terminal)?;
     }
 
