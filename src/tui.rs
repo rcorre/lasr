@@ -11,7 +11,8 @@ use crossterm::event::{Event, KeyEvent, KeyEventKind};
 use ratatui::{
     DefaultTerminal, Frame,
     layout::{Constraint, Direction, Layout, Position},
-    text::{Line, Span},
+    style::Style,
+    text::{Line, Span, Text},
     widgets::{Block, Paragraph, Row, Table, TableState},
 };
 use regex::{Regex, RegexBuilder};
@@ -64,6 +65,67 @@ impl LineSubstitution {
 
         line
     }
+}
+
+#[test]
+fn test_line_substitution_to_text_find() {
+    let theme = Theme::default();
+    assert_eq!(
+        LineSubstitution {
+            line_number: 1,
+            text: "foo bar baz".into(),
+            matches: vec![Range { start: 4, end: 7 }],
+        }
+        .to_text(&Regex::new("bar").unwrap(), "", &theme),
+        Text::from(Line::from(vec![
+            Span::styled("foo ", theme.base),
+            Span::styled("bar", theme.find),
+            Span::styled(" baz", theme.base),
+        ]))
+    );
+}
+
+#[test]
+fn test_line_substitution_to_text_replace() {
+    let theme = Theme::default();
+    assert_eq!(
+        LineSubstitution {
+            line_number: 1,
+            text: "foo bar baz".into(),
+            matches: vec![Range { start: 4, end: 7 }],
+        }
+        .to_text(&Regex::new("bar").unwrap(), "test", &theme),
+        Text::from(Line::from(vec![
+            Span::styled("foo ", theme.base),
+            Span::styled("test", theme.replace),
+            Span::styled(" baz", theme.base),
+        ]))
+    );
+}
+
+#[test]
+fn test_line_substitution_to_text_multiline() {
+    // to_text should return multiple lines, with the highlight spanning
+    // lines where the multi-line regex matched
+    let theme = Theme::default();
+    assert_eq!(
+        LineSubstitution {
+            line_number: 1,
+            text: "foo bar baz\nbiz baz buz".into(),
+            matches: vec![Range { start: 9, end: 16 }],
+        }
+        .to_text(&Regex::new("\\w+\n\\w+").unwrap(), "", &theme),
+        Text::from(vec![
+            Line::from(vec![
+                Span::styled("foo bar ", theme.base),
+                Span::styled("baz", theme.find),
+            ]),
+            Line::from(vec![
+                Span::styled("biz", theme.find),
+                Span::styled(" baz buz", theme.base),
+            ])
+        ])
+    );
 }
 
 pub struct App {
@@ -277,8 +339,8 @@ impl App {
             let table = Table::new(
                 sub.subs.iter().map(|s| {
                     Row::new(vec![
-                        Line::raw(s.line_number.to_string()),
-                        s.to_line(re, &self.replacement, theme),
+                        Text::raw(s.line_number.to_string()),
+                        s.to_text(re, &self.replacement, theme),
                     ])
                 }),
                 &[Constraint::Max(6), Constraint::Fill(1)],
