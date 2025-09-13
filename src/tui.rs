@@ -3,7 +3,7 @@ use std::{ops::Range, path::PathBuf};
 use super::input::LineInput;
 use crate::{
     config::{Action, Config, Theme},
-    search::{self, FileMatch, SearchParams},
+    search::{self, FileMatch, LineMatch, SearchParams},
 };
 use anyhow::{Context, Result};
 use crossbeam::channel::{Receiver, RecvError, bounded, never, select_biased};
@@ -22,16 +22,77 @@ use tracing::{debug, info, trace, warn};
 const SEARCH_BUFFER: usize = 3;
 
 #[derive(Debug)]
-struct LineSubstitution {
-    line_number: u64,
+struct Substitution {
+    range: Range<usize>,
+    replacement: String, // only set if we have a replacement string
+}
+
+#[derive(Debug)]
+struct TextSubstitution {
+    start_line: u64,
+    line_count: u16,
     text: String,
-    matches: Vec<Range<usize>>,
+    matches: Vec<Substitution>,
+}
+
+impl TextSubstitution {
+    fn new(line: LineMatch, re: &Regex, replacement: &str) -> Self {
+        Self {
+            start_line: line.number,
+            line_count: line.text.lines().count() as u16,
+            matches: re
+                .find_iter(&line.text)
+                .map(|m| {
+                    let range = Range {
+                        start: m.start(),
+                        end: m.end(),
+                    };
+                    let replacement = re
+                        .replace_all(&line.text[range.clone()], replacement)
+                        .to_string();
+                    Substitution { range, replacement }
+                })
+                .collect(),
+            text: line.text,
+        }
+    }
+
+    fn update_replacement(&mut self, re: &Regex, replacement: &str) {
+        for m in &mut self.matches {
+            m.replacement = re
+                .replace_all(&self.text[m.range.clone()], replacement)
+                .to_string();
+        }
+    }
 }
 
 #[derive(Debug)]
 struct FileSubstitution {
     path: PathBuf,
-    subs: Vec<LineSubstitution>,
+    subs: Vec<TextSubstitution>,
+}
+
+impl FileSubstitution {
+    fn new(file: FileMatch, re: &Regex, replacement: &str) -> Self {
+        Self {
+            path: file.path,
+            subs: file
+                .lines
+                .into_iter()
+                .map(|line| TextSubstitution::new(line, re, replacement))
+                .collect(),
+        }
+    }
+
+    fn update_replacement(&mut self, re: &Regex, replacement: &str) {
+        for s in &mut self.subs {
+            s.update_replacement(re, replacement);
+        }
+    }
+
+    fn line_count(&self) -> u16 {
+        self.subs.iter().map(|s| s.line_count).sum()
+    }
 }
 
 fn push_lines<'a>(s: &'a str, text: &mut Text<'a>, style: Style) {
@@ -77,35 +138,23 @@ fn test_push_lines() {
     );
 }
 
-impl LineSubstitution {
-    fn to_text<'a>(&'a self, re: &'a Regex, replacement: &'a str, theme: &Theme) -> Text<'a> {
+impl TextSubstitution {
+    fn to_text<'a>(&'a self, theme: &Theme) -> Text<'a> {
         let mut text = Text::default();
         let mut last_end = 0;
 
-        for range in &self.matches {
+        for sub in &self.matches {
+            let range = &sub.range;
             // Add text before the match
             if last_end < range.start {
                 push_lines(&self.text[last_end..range.start], &mut text, theme.base);
             }
 
-            if replacement.is_empty() {
+            if sub.replacement.is_empty() {
+                // no replacement text, draw the existing text
                 push_lines(&self.text[range.clone()], &mut text, theme.find);
             } else {
-                let replaced = &self.text[range.clone()];
-                let replaced = re.replace_all(replaced, replacement);
-                // text.push_line(replaced);
-                // push_lines(replaced, &mut line, &mut all_lines, theme.replace);
-                let mut lines = replaced.lines();
-                if let Some(first_line) = lines.next() {
-                    eprintln!("Append first line {first_line}");
-                    line.push_span(Span::styled(first_line, theme.replace));
-                }
-
-                for l in lines {
-                    text.push_line(line);
-                    line = Line::default();
-                    line.push_span(Span::styled(l, theme.replace));
-                }
+                push_lines(&sub.replacement, &mut text, theme.replace);
             }
 
             last_end = range.end;
@@ -124,12 +173,16 @@ impl LineSubstitution {
 fn test_line_substitution_to_text_find() {
     let theme = Theme::default();
     assert_eq!(
-        LineSubstitution {
-            line_number: 1,
+        TextSubstitution {
+            start_line: 1,
+            line_count: 1,
             text: "foo bar baz".into(),
-            matches: vec![Range { start: 4, end: 7 }],
+            matches: vec![Substitution {
+                range: Range { start: 4, end: 7 },
+                replacement: "".to_string(),
+            }],
         }
-        .to_text(&Regex::new("bar").unwrap(), "", &theme),
+        .to_text(&theme),
         Text::from(Line::from(vec![
             Span::styled("foo ", theme.base),
             Span::styled("bar", theme.find),
@@ -142,12 +195,16 @@ fn test_line_substitution_to_text_find() {
 fn test_line_substitution_to_text_replace() {
     let theme = Theme::default();
     assert_eq!(
-        LineSubstitution {
-            line_number: 1,
+        TextSubstitution {
+            start_line: 1,
+            line_count: 1,
             text: "foo bar baz".into(),
-            matches: vec![Range { start: 4, end: 7 }],
+            matches: vec![Substitution {
+                range: Range { start: 4, end: 7 },
+                replacement: "test".into()
+            }],
         }
-        .to_text(&Regex::new("bar").unwrap(), "test", &theme),
+        .to_text(&theme),
         Text::from(Line::from(vec![
             Span::styled("foo ", theme.base),
             Span::styled("test", theme.replace),
@@ -192,7 +249,6 @@ pub struct App {
     replacement_input: LineInput,
     editing_pattern: bool,
     re: Option<Regex>,
-    replacement: String,
     ignore_case: bool,
     multi_line: bool,
     scroll: usize,
@@ -253,7 +309,6 @@ impl App {
             subs: vec![],
             editing_pattern: true,
             re: None,
-            replacement: "".to_string(),
             ignore_case,
             multi_line,
             scroll: 0,
@@ -271,7 +326,7 @@ impl App {
             let path = &sub.path;
             debug!("Replacing in {path:?}");
             let text = std::fs::read_to_string(path)?;
-            let text = re.replace_all(&text, &self.replacement);
+            let text = re.replace_all(&text, self.replacement_input.pattern());
             std::fs::write(path, text.as_ref())?;
         }
 
@@ -285,7 +340,7 @@ impl App {
             let path = &finding.path;
             debug!("Replacing in {path:?}");
             let text = std::fs::read_to_string(path)?;
-            let text = re.replace_all(&text, &self.replacement);
+            let text = re.replace_all(&text, self.replacement_input.pattern());
             std::fs::write(path, text.as_ref())?;
         }
 
@@ -374,7 +429,7 @@ impl App {
             .subs
             .iter()
             .skip(self.scroll)
-            .map(|s| (s.subs.len() + 2) as u16) // +2 for top/bottom border
+            .map(|s| (s.line_count() + 2)) // +2 for top/bottom border
             .take_while(|s| {
                 let ret = size_left > 0;
                 size_left = size_left.saturating_sub(*s);
@@ -383,18 +438,13 @@ impl App {
             .map(Constraint::Length)
             .collect();
 
-        let Some(ref re) = self.re else {
-            return Ok(false);
-        };
         let search_areas = Layout::vertical(constraints.as_slice()).split(search_area);
         let subs = self.subs.iter().skip(self.scroll);
         for (area, sub) in search_areas.iter().zip(subs) {
             let table = Table::new(
                 sub.subs.iter().map(|s| {
-                    Row::new(vec![
-                        Text::raw(s.line_number.to_string()),
-                        s.to_text(re, &self.replacement, theme),
-                    ])
+                    Row::new(vec![Text::raw(s.start_line.to_string()), s.to_text(theme)])
+                        .height(s.line_count)
                 }),
                 &[Constraint::Max(6), Constraint::Fill(1)],
             )
@@ -415,24 +465,7 @@ impl App {
             warn!("Got substitution, but no regex set");
             return Ok(());
         };
-        let sub = FileSubstitution {
-            path: finding.path,
-            subs: finding
-                .lines
-                .into_iter()
-                .map(|line| LineSubstitution {
-                    line_number: line.number,
-                    matches: re
-                        .find_iter(&line.text)
-                        .map(|m| Range {
-                            start: m.start(),
-                            end: m.end(),
-                        })
-                        .collect(),
-                    text: line.text,
-                })
-                .collect(),
-        };
+        let sub = FileSubstitution::new(finding, re, self.replacement_input.pattern());
         debug!("Pushing item: {sub:?}");
         self.subs.push(sub);
         debug!("Total items: {}", self.subs.len());
@@ -455,6 +488,14 @@ impl App {
         info!("New pattern: {pattern}");
         self.start_search();
         self.subs.clear();
+    }
+
+    fn update_replacement(&mut self) {
+        let replacement = self.replacement_input.pattern();
+        let Some(re) = &self.re else { return };
+        for sub in &mut self.subs {
+            sub.update_replacement(re, replacement)
+        }
     }
 
     /// updates the application's state based on user input
@@ -549,15 +590,15 @@ impl App {
             };
             self.update_pattern();
         } else {
-            let Some(replacement) = self
+            let Some(_) = self
                 .replacement_input
                 .handle_key_event(key_event, &self.config.keys)
             else {
                 debug!("Replacement unchanged");
                 return Ok(State::Continue);
             };
-            self.replacement = replacement.to_string();
-            info!("New pattern: {replacement}");
+            self.update_replacement();
+            info!("New replacement: {}", self.replacement_input.pattern());
         }
 
         Ok(State::Continue)
