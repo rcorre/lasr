@@ -3,7 +3,8 @@ use std::{ops::Range, path::PathBuf};
 use super::input::LineInput;
 use crate::{
     config::{Action, Config, Theme},
-    search::{self, FileMatch, LineMatch, SearchParams},
+    finder::{FileMatch, LineMatch, RegexFinder, SearchParams},
+    search::{self},
 };
 use anyhow::{Context, Result};
 use crossbeam::channel::{Receiver, RecvError, bounded, never, select_biased};
@@ -312,16 +313,16 @@ impl App {
         let types = self.types.clone();
         let threads = self.config.threads;
         std::thread::spawn(move || -> Result<()> {
-            search::search(SearchParams {
-                pattern,
+            let params = SearchParams {
                 paths,
                 ignore_case,
                 multi_line,
                 tx,
                 types,
                 threads,
-            })
-            .context("Search thread error")
+            };
+            let finder = RegexFinder::new(&pattern, &params).unwrap();
+            search::search(finder, params).context("Search thread error")
         });
     }
 

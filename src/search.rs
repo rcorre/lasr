@@ -1,28 +1,11 @@
-use anyhow::{Context, Result};
+use crate::finder::{FileMatch, Finder, SearchParams};
+use anyhow::Result;
 use crossbeam::channel::Sender;
-use grep::{
-    regex::{RegexMatcher, RegexMatcherBuilder},
-    searcher::{BinaryDetection, Searcher, SearcherBuilder, sinks},
-};
 use ignore::WalkState;
-use std::path::PathBuf;
 use tracing::{debug, warn};
 
-#[derive(Debug, PartialEq)]
-pub struct LineMatch {
-    pub number: u64,
-    pub text: String,
-}
-
-#[derive(Debug, PartialEq)]
-pub struct FileMatch {
-    pub path: PathBuf,
-    pub lines: Vec<LineMatch>,
-}
-
 fn walk(
-    matcher: &RegexMatcher,
-    searcher: &mut Searcher,
+    finder: &mut impl Finder,
     path: Result<ignore::DirEntry, ignore::Error>,
     tx: &Sender<FileMatch>,
 ) -> Result<WalkState> {
@@ -32,18 +15,7 @@ fn walk(
     if !meta.is_file() {
         return Ok(WalkState::Continue);
     };
-    let mut lines = vec![];
-    searcher.search_path(
-        matcher,
-        path.path(),
-        sinks::UTF8(|number, text| {
-            lines.push(LineMatch {
-                number,
-                text: text.to_string(),
-            });
-            Ok(true)
-        }),
-    )?;
+    let lines = finder.find(path.path())?;
     if lines.is_empty() {
         return Ok(WalkState::Continue);
     }
@@ -60,31 +32,11 @@ fn walk(
     Ok(WalkState::Continue)
 }
 
-#[derive(Debug)]
-pub struct SearchParams {
-    pub pattern: String,
-    pub paths: Vec<PathBuf>,
-    pub ignore_case: bool,
-    pub multi_line: bool,
-    pub tx: Sender<FileMatch>,
-    pub types: ignore::types::Types,
-    pub threads: usize,
-}
-
-pub fn search(params: SearchParams) -> Result<()> {
+pub fn search(
+    mut finder: impl Finder + std::clone::Clone + std::marker::Send,
+    params: SearchParams,
+) -> Result<()> {
     debug!("Starting search with params: {params:?}");
-
-    let matcher = RegexMatcherBuilder::new()
-        .case_smart(false)
-        .case_insensitive(params.ignore_case)
-        .multi_line(params.multi_line)
-        .build(&params.pattern)
-        .with_context(|| format!("Failed to compile searcher with params: {params:?}"))?;
-
-    let mut searcher = SearcherBuilder::new()
-        .binary_detection(BinaryDetection::quit(0))
-        .multi_line(params.multi_line)
-        .build();
 
     let mut builder = ignore::WalkBuilder::new(&params.paths[0]);
     builder
@@ -97,7 +49,7 @@ pub fn search(params: SearchParams) -> Result<()> {
 
     if params.threads == 1 {
         for path in builder.build() {
-            match walk(&matcher, &mut searcher, path, &params.tx) {
+            match walk(&mut finder, path, &params.tx) {
                 Ok(WalkState::Quit) => {
                     return Ok(());
                 }
@@ -112,10 +64,9 @@ pub fn search(params: SearchParams) -> Result<()> {
 
     builder.build_parallel().run(move || {
         let tx = params.tx.clone();
-        let mut searcher = searcher.clone();
-        let matcher = matcher.clone();
+        let mut finder = finder.clone();
         Box::new(move |path| -> WalkState {
-            match walk(&matcher, &mut searcher, path, &tx) {
+            match walk(&mut finder, path, &tx) {
                 Ok(state) => state,
                 Err(e) => {
                     warn!("Search error: {e}");
@@ -133,6 +84,8 @@ mod tests {
     use crossbeam::channel::{RecvError, unbounded};
     use pretty_assertions::assert_eq;
 
+    use crate::finder::{AstFinder, LineMatch, RegexFinder};
+
     use super::*;
 
     fn types(t: &[&str]) -> ignore::types::Types {
@@ -149,16 +102,16 @@ mod tests {
     fn test_search() {
         let (tx, rx) = unbounded();
 
-        search(SearchParams {
-            pattern: "line".into(),
+        let params = SearchParams {
             paths: vec!["testdata".into()],
             ignore_case: false,
             multi_line: false,
             tx,
             types: types(&[]),
             threads: 1,
-        })
-        .unwrap();
+        };
+        let finder = RegexFinder::new("line", &params).unwrap();
+        search(finder, params).unwrap();
 
         let mut results: Vec<_> = rx.iter().collect();
         results.sort_by(|a, b| a.path.cmp(&b.path));
@@ -211,16 +164,16 @@ mod tests {
     fn test_search_ignore_case() {
         let (tx, rx) = unbounded();
 
-        search(SearchParams {
-            pattern: "the".into(),
+        let params = SearchParams {
             paths: vec!["testdata".into()],
             ignore_case: true,
             multi_line: false,
             tx,
             types: types(&[]),
             threads: 1,
-        })
-        .unwrap();
+        };
+        let finder = RegexFinder::new("the", &params).unwrap();
+        search(finder, params).unwrap();
         let mut results: Vec<_> = rx.iter().collect();
         results.sort_by(|a, b| a.path.cmp(&b.path));
 
@@ -253,16 +206,16 @@ mod tests {
     fn test_search_file_types() {
         let (tx, rx) = unbounded();
 
-        search(SearchParams {
-            pattern: "First".into(),
+        let params = SearchParams {
             paths: vec!["testdata".into()],
             ignore_case: true,
             multi_line: false,
             tx,
             types: types(&["md"]),
             threads: 1,
-        })
-        .unwrap();
+        };
+        let finder = RegexFinder::new("First", &params).unwrap();
+        search(finder, params).unwrap();
         let mut results: Vec<_> = rx.iter().collect();
         results.sort_by(|a, b| a.path.cmp(&b.path));
 
@@ -275,6 +228,54 @@ mod tests {
                     text: "# First heading\n".into(),
                 },],
             },]
+        );
+
+        assert_eq!(rx.recv(), Err(RecvError));
+    }
+
+    #[test]
+    #[tracing_test::traced_test]
+    fn test_search_ast() {
+        let (tx, rx) = unbounded();
+
+        let params = SearchParams {
+            paths: vec!["testdata".into()],
+            ignore_case: false,
+            multi_line: false,
+            tx,
+            types: types(&[]),
+            threads: 1,
+        };
+        let finder = AstFinder::new("$FN($$$ARGS)").unwrap();
+        search(finder, params).unwrap();
+
+        let mut results: Vec<_> = rx.iter().collect();
+        results.sort_by(|a, b| a.path.cmp(&b.path));
+
+        assert_eq!(
+            results,
+            [
+                FileMatch {
+                    path: "testdata/main.py".into(),
+                    lines: vec![
+                        LineMatch {
+                            number: 1,
+                            text: "print(x + y)".into(),
+                        },
+                        LineMatch {
+                            number: 4,
+                            text: "thing(3, 5)".into(),
+                        },
+                    ],
+                },
+                FileMatch {
+                    path: "testdata/main.rs".into(),
+                    lines: vec![LineMatch {
+                        number: 5,
+                        text: "thing(3, 5)".into(),
+                    },],
+                },
+            ]
         );
 
         assert_eq!(rx.recv(), Err(RecvError));
