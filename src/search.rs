@@ -280,4 +280,44 @@ mod tests {
 
         assert_eq!(rx.recv(), Err(RecvError));
     }
+
+    #[test]
+    #[tracing_test::traced_test]
+    fn test_search_ast_invalid_pattern() {
+        // This is a valid pattern for rust but not python
+        let (tx, rx) = unbounded();
+
+        let params = SearchParams {
+            paths: vec!["testdata".into()],
+            ignore_case: false,
+            multi_line: false,
+            tx,
+            types: types(&[]),
+            threads: 1,
+        };
+        let finder = AstFinder::new("fn $FN").unwrap();
+        search(finder, params).unwrap();
+
+        let mut results: Vec<_> = rx.iter().collect();
+        results.sort_by(|a, b| a.path.cmp(&b.path));
+
+        assert_eq!(
+            results,
+            [FileMatch {
+                path: "testdata/main.rs".into(),
+                lines: vec![
+                    LineMatch {
+                        number: 0,
+                        text: "fn thing(x: u64, y: u64) {\n    println!(\"{x} {y}\");\n}".into(),
+                    },
+                    LineMatch {
+                        number: 4,
+                        text: "fn main() {\n    thing(3, 5);\n}".into(),
+                    },
+                ],
+            },]
+        );
+
+        assert_eq!(rx.recv(), Err(RecvError));
+    }
 }

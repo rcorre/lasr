@@ -3,7 +3,7 @@ use std::{ops::Range, path::PathBuf};
 use super::input::LineInput;
 use crate::{
     config::{Action, Config, Theme},
-    finder::{FileMatch, LineMatch, RegexFinder, SearchParams},
+    finder::{AstFinder, FileMatch, LineMatch, RegexFinder, SearchParams},
     search::{self},
 };
 use anyhow::{Context, Result};
@@ -293,6 +293,7 @@ pub struct App {
     ignore_case: bool,
     multi_line: bool,
     scroll: usize,
+    ast_regex: Regex,
 }
 
 enum State {
@@ -306,23 +307,24 @@ impl App {
         // blocking channel to pause the search when we aren't ready for more results
         let (tx, rx) = bounded(0);
         let pattern = self.pattern_input.pattern().to_string();
-        let paths = self.paths.clone();
         self.search_rx.replace(rx);
-        let ignore_case = self.ignore_case;
-        let multi_line = self.multi_line;
-        let types = self.types.clone();
-        let threads = self.config.threads;
+        let is_ast = self.ast_regex.is_match(&pattern);
+        let params = SearchParams {
+            paths: self.paths.clone(),
+            ignore_case: self.ignore_case,
+            multi_line: self.multi_line,
+            tx,
+            types: self.types.clone(),
+            threads: self.config.threads,
+        };
         std::thread::spawn(move || -> Result<()> {
-            let params = SearchParams {
-                paths,
-                ignore_case,
-                multi_line,
-                tx,
-                types,
-                threads,
-            };
-            let finder = RegexFinder::new(&pattern, &params).unwrap();
-            search::search(finder, params).context("Search thread error")
+            if is_ast {
+                let finder = AstFinder::new(&pattern).unwrap();
+                search::search(finder, params).context("Search thread error")
+            } else {
+                let finder = RegexFinder::new(&pattern, &params).unwrap();
+                search::search(finder, params).context("Search thread error")
+            }
         });
     }
 
@@ -353,6 +355,7 @@ impl App {
             ignore_case,
             multi_line,
             scroll: 0,
+            ast_regex: Regex::new("\\$[A-Z]+").unwrap(),
         }
     }
 

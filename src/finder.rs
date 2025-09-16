@@ -1,9 +1,8 @@
 use anyhow::{Context, Result};
-use ast_grep_core::language::Language;
+use ast_grep_core::{Pattern, language::Language};
 use ast_grep_language::{LanguageExt, SupportLang};
 use crossbeam::channel::Sender;
 use grep::{
-    matcher::Matcher,
     regex::{RegexMatcher, RegexMatcherBuilder},
     searcher::{BinaryDetection, Searcher, SearcherBuilder, sinks},
 };
@@ -110,17 +109,24 @@ impl Finder for AstFinder {
             return Ok(vec![]);
         };
 
+        let pattern = match Pattern::try_new(&self.pattern, lang) {
+            Ok(p) => p,
+            Err(e) => {
+                trace!("Invalid pattern for language {lang:?}: {e}");
+                return Ok(vec![]);
+            }
+        };
+
         trace!(
             "reading {path:?} of lang {lang} with pattern {}",
             self.pattern
         );
         let src = std::fs::read_to_string(path).with_context(|| format!("Reading {path:?}"))?;
         let root = lang.ast_grep(src);
+        let node = root.root();
 
-        Ok(root
-            .root()
-            .find_all(self.pattern.as_str())
-            .inspect(|m| eprintln!("{}", m.text()))
+        Ok(node
+            .find_all(pattern)
             .map(|m| LineMatch {
                 number: m.start_pos().line() as u64,
                 text: m.text().into(),
