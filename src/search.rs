@@ -5,7 +5,7 @@ use ignore::WalkState;
 use tracing::{debug, warn};
 
 fn walk(
-    finder: &mut impl Finder,
+    finder: &mut Finder,
     path: Result<ignore::DirEntry, ignore::Error>,
     tx: &Sender<FileMatch>,
 ) -> Result<WalkState> {
@@ -32,10 +32,7 @@ fn walk(
     Ok(WalkState::Continue)
 }
 
-pub fn search(
-    mut finder: impl Finder + std::clone::Clone + std::marker::Send,
-    params: SearchParams,
-) -> Result<()> {
+pub fn search(mut finder: Finder, params: SearchParams, tx: Sender<FileMatch>) -> Result<()> {
     debug!("Starting search with params: {params:?}");
 
     let mut builder = ignore::WalkBuilder::new(&params.paths[0]);
@@ -49,7 +46,7 @@ pub fn search(
 
     if params.threads == 1 {
         for path in builder.build() {
-            match walk(&mut finder, path, &params.tx) {
+            match walk(&mut finder, path, &tx) {
                 Ok(WalkState::Quit) => {
                     return Ok(());
                 }
@@ -63,7 +60,7 @@ pub fn search(
     }
 
     builder.build_parallel().run(move || {
-        let tx = params.tx.clone();
+        let tx = tx.clone();
         let mut finder = finder.clone();
         Box::new(move |path| -> WalkState {
             match walk(&mut finder, path, &tx) {
@@ -84,7 +81,7 @@ mod tests {
     use crossbeam::channel::{RecvError, unbounded};
     use pretty_assertions::assert_eq;
 
-    use crate::finder::{AstFinder, LineMatch, RegexFinder};
+    use crate::finder::LineMatch;
 
     use super::*;
 
@@ -106,12 +103,11 @@ mod tests {
             paths: vec!["testdata".into()],
             ignore_case: false,
             multi_line: false,
-            tx,
             types: types(&[]),
             threads: 1,
         };
-        let finder = RegexFinder::new("line", &params).unwrap();
-        search(finder, params).unwrap();
+        let finder = Finder::new("line", &params).unwrap();
+        search(finder, params, tx).unwrap();
 
         let mut results: Vec<_> = rx.iter().collect();
         results.sort_by(|a, b| a.path.cmp(&b.path));
@@ -168,12 +164,11 @@ mod tests {
             paths: vec!["testdata".into()],
             ignore_case: true,
             multi_line: false,
-            tx,
             types: types(&[]),
             threads: 1,
         };
-        let finder = RegexFinder::new("the", &params).unwrap();
-        search(finder, params).unwrap();
+        let finder = Finder::new("the", &params).unwrap();
+        search(finder, params, tx).unwrap();
         let mut results: Vec<_> = rx.iter().collect();
         results.sort_by(|a, b| a.path.cmp(&b.path));
 
@@ -210,12 +205,11 @@ mod tests {
             paths: vec!["testdata".into()],
             ignore_case: true,
             multi_line: false,
-            tx,
             types: types(&["md"]),
             threads: 1,
         };
-        let finder = RegexFinder::new("First", &params).unwrap();
-        search(finder, params).unwrap();
+        let finder = Finder::new("First", &params).unwrap();
+        search(finder, params, tx).unwrap();
         let mut results: Vec<_> = rx.iter().collect();
         results.sort_by(|a, b| a.path.cmp(&b.path));
 
@@ -242,12 +236,11 @@ mod tests {
             paths: vec!["testdata".into()],
             ignore_case: false,
             multi_line: false,
-            tx,
             types: types(&[]),
             threads: 1,
         };
-        let finder = AstFinder::new("$FN($$$ARGS)").unwrap();
-        search(finder, params).unwrap();
+        let finder = Finder::new("$FN($$$ARGS)", &params).unwrap();
+        search(finder, params, tx).unwrap();
 
         let mut results: Vec<_> = rx.iter().collect();
         results.sort_by(|a, b| a.path.cmp(&b.path));
@@ -291,12 +284,11 @@ mod tests {
             paths: vec!["testdata".into()],
             ignore_case: false,
             multi_line: false,
-            tx,
             types: types(&[]),
             threads: 1,
         };
-        let finder = AstFinder::new("fn $FN").unwrap();
-        search(finder, params).unwrap();
+        let finder = Finder::new("fn $FN", &params).unwrap();
+        search(finder, params, tx).unwrap();
 
         let mut results: Vec<_> = rx.iter().collect();
         results.sort_by(|a, b| a.path.cmp(&b.path));

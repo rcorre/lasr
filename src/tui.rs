@@ -3,7 +3,7 @@ use std::{ops::Range, path::PathBuf};
 use super::input::LineInput;
 use crate::{
     config::{Action, Config, Theme},
-    finder::{AstFinder, FileMatch, LineMatch, RegexFinder, SearchParams},
+    finder::{FileMatch, Finder, LineMatch, SearchParams},
     search::{self},
 };
 use anyhow::{Context, Result};
@@ -290,10 +290,10 @@ pub struct App {
     replacement_input: LineInput,
     editing_pattern: bool,
     re: Option<Regex>,
+    finder: Option<Finder>,
     ignore_case: bool,
     multi_line: bool,
     scroll: usize,
-    ast_regex: Regex,
 }
 
 enum State {
@@ -304,27 +304,23 @@ enum State {
 
 impl App {
     fn start_search(&mut self) {
+        let Some(finder) = &self.finder else {
+            debug!("No finder, not starting search");
+            return;
+        };
+        let finder = finder.clone();
         // blocking channel to pause the search when we aren't ready for more results
         let (tx, rx) = bounded(0);
-        let pattern = self.pattern_input.pattern().to_string();
         self.search_rx.replace(rx);
-        let is_ast = self.ast_regex.is_match(&pattern);
         let params = SearchParams {
             paths: self.paths.clone(),
             ignore_case: self.ignore_case,
             multi_line: self.multi_line,
-            tx,
             types: self.types.clone(),
             threads: self.config.threads,
         };
         std::thread::spawn(move || -> Result<()> {
-            if is_ast {
-                let finder = AstFinder::new(&pattern).unwrap();
-                search::search(finder, params).context("Search thread error")
-            } else {
-                let finder = RegexFinder::new(&pattern, &params).unwrap();
-                search::search(finder, params).context("Search thread error")
-            }
+            search::search(finder, params, tx).context("Search thread error")
         });
     }
 
@@ -352,10 +348,10 @@ impl App {
             subs: vec![],
             editing_pattern: true,
             re: None,
+            finder: None,
             ignore_case,
             multi_line,
             scroll: 0,
-            ast_regex: Regex::new("\\$[A-Z]+").unwrap(),
         }
     }
 
@@ -529,6 +525,14 @@ impl App {
                 return;
             }
         };
+        let params = SearchParams {
+            paths: self.paths.clone(),
+            ignore_case: self.ignore_case,
+            multi_line: self.multi_line,
+            types: self.types.clone(),
+            threads: self.config.threads,
+        };
+        self.finder = Finder::new(pattern, &params);
         info!("New pattern: {pattern}");
         self.start_search();
         self.subs.clear();

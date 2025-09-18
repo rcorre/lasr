@@ -1,13 +1,15 @@
 use anyhow::{Context, Result};
 use ast_grep_core::{Pattern, language::Language};
 use ast_grep_language::{LanguageExt, SupportLang};
-use crossbeam::channel::Sender;
 use grep::{
     regex::{RegexMatcher, RegexMatcherBuilder},
     searcher::{BinaryDetection, Searcher, SearcherBuilder, sinks},
 };
 use regex::{Regex, RegexBuilder};
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::OnceLock,
+};
 use tracing::trace;
 
 #[derive(Debug, PartialEq)]
@@ -27,13 +29,52 @@ pub struct SearchParams {
     pub paths: Vec<PathBuf>,
     pub ignore_case: bool,
     pub multi_line: bool,
-    pub tx: Sender<FileMatch>,
     pub types: ignore::types::Types,
     pub threads: usize,
 }
 
-pub trait Finder {
-    fn find(&mut self, path: &Path) -> Result<Vec<LineMatch>>;
+#[derive(Debug, Clone)]
+pub enum Finder {
+    Regex(Box<RegexFinder>),
+    Ast(AstFinder),
+}
+
+fn is_ast_pattern(pattern: &str) -> bool {
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    let re = REGEX.get_or_init(|| Regex::new("\\$[A-Z_][A-Z_0-9]*|\\$\\$\\$").unwrap());
+    re.is_match(pattern)
+}
+
+#[test]
+fn test_is_ast_pattern() {
+    assert!(is_ast_pattern("let $X ="));
+    assert!(is_ast_pattern("fn($$$ARGS)"));
+    assert!(!is_ast_pattern("^foo$"));
+    assert!(!is_ast_pattern("foo"));
+    assert!(!is_ast_pattern("foo.*"));
+    assert!(!is_ast_pattern("foo(.*)"));
+}
+
+impl Finder {
+    pub fn new(pattern: &str, params: &SearchParams) -> Option<Self> {
+        if is_ast_pattern(pattern) {
+            return Some(Self::Ast(AstFinder::new(pattern)));
+        }
+        match RegexFinder::new(pattern, params) {
+            Ok(f) => Some(Self::Regex(Box::new(f))),
+            Err(e) => {
+                trace!("Not a valid regex pattern: {pattern}: {e}");
+                None
+            }
+        }
+    }
+
+    pub fn find(&mut self, path: &Path) -> Result<Vec<LineMatch>> {
+        match self {
+            Finder::Regex(f) => f.find(path),
+            Finder::Ast(f) => f.find(path),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -68,9 +109,7 @@ impl RegexFinder {
             searcher,
         })
     }
-}
 
-impl Finder for RegexFinder {
     fn find(&mut self, path: &Path) -> Result<Vec<LineMatch>> {
         let mut lines = vec![];
         self.searcher.search_path(
@@ -95,14 +134,12 @@ pub struct AstFinder {
 }
 
 impl AstFinder {
-    pub fn new(pattern: impl Into<String>) -> Result<Self> {
-        Ok(Self {
+    pub fn new(pattern: impl Into<String>) -> Self {
+        Self {
             pattern: pattern.into(),
-        })
+        }
     }
-}
 
-impl Finder for AstFinder {
     fn find(&mut self, path: &Path) -> Result<Vec<LineMatch>> {
         let Some(lang) = SupportLang::from_path(path) else {
             trace!("No AST language for {path:?}");
