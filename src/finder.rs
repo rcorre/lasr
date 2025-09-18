@@ -27,10 +27,14 @@ pub struct FileMatch {
 #[derive(Debug, Clone)]
 pub struct SearchParams {
     pub paths: Vec<PathBuf>,
-    pub ignore_case: bool,
-    pub multi_line: bool,
     pub types: ignore::types::Types,
     pub threads: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct RegexParams {
+    pub ignore_case: bool,
+    pub multi_line: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -56,7 +60,7 @@ fn test_is_ast_pattern() {
 }
 
 impl Finder {
-    pub fn new(pattern: &str, params: &SearchParams) -> Option<Self> {
+    pub fn new(pattern: &str, params: &RegexParams) -> Option<Self> {
         if is_ast_pattern(pattern) {
             return Some(Self::Ast(AstFinder::new(pattern)));
         }
@@ -85,7 +89,7 @@ pub struct RegexFinder {
 }
 
 impl RegexFinder {
-    pub fn new(pattern: &str, params: &SearchParams) -> Result<Self> {
+    pub fn new(pattern: &str, params: &RegexParams) -> Result<Self> {
         let regex = RegexBuilder::new(pattern)
             .case_insensitive(params.ignore_case)
             .build()

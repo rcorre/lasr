@@ -3,7 +3,7 @@ use std::{ops::Range, path::PathBuf};
 use super::input::LineInput;
 use crate::{
     config::{Action, Config, Theme},
-    finder::{FileMatch, Finder, LineMatch, SearchParams},
+    finder::{FileMatch, Finder, LineMatch, RegexParams, SearchParams},
     search::{self},
 };
 use anyhow::{Context, Result};
@@ -280,9 +280,9 @@ fn test_line_substitution_to_text_multiline_split_on_newline() {
 }
 
 pub struct App {
-    paths: Vec<PathBuf>,
-    types: ignore::types::Types,
     config: Config,
+    search_params: SearchParams,
+    regex_params: RegexParams,
     subs: Vec<FileSubstitution>,
     search_rx: Option<Receiver<FileMatch>>,
     event_rx: Receiver<Event>,
@@ -291,8 +291,6 @@ pub struct App {
     editing_pattern: bool,
     re: Option<Regex>,
     finder: Option<Finder>,
-    ignore_case: bool,
-    multi_line: bool,
     scroll: usize,
 }
 
@@ -312,13 +310,7 @@ impl App {
         // blocking channel to pause the search when we aren't ready for more results
         let (tx, rx) = bounded(0);
         self.search_rx.replace(rx);
-        let params = SearchParams {
-            paths: self.paths.clone(),
-            ignore_case: self.ignore_case,
-            multi_line: self.multi_line,
-            types: self.types.clone(),
-            threads: self.config.threads,
-        };
+        let params = self.search_params.clone();
         std::thread::spawn(move || -> Result<()> {
             search::search(finder, params, tx).context("Search thread error")
         });
@@ -338,8 +330,15 @@ impl App {
             paths
         };
         Self {
-            paths,
-            types,
+            search_params: SearchParams {
+                paths,
+                types,
+                threads: config.threads,
+            },
+            regex_params: RegexParams {
+                ignore_case,
+                multi_line,
+            },
             pattern_input: LineInput::new(config.auto_pairs),
             replacement_input: LineInput::new(config.auto_pairs),
             config,
@@ -349,8 +348,6 @@ impl App {
             editing_pattern: true,
             re: None,
             finder: None,
-            ignore_case,
-            multi_line,
             scroll: 0,
         }
     }
@@ -421,10 +418,10 @@ impl App {
             .areas(input_area);
 
         let mut flags = String::new();
-        if self.ignore_case {
+        if self.regex_params.ignore_case {
             flags += "i";
         }
-        if self.multi_line {
+        if self.regex_params.multi_line {
             flags += "m";
         }
         let mut search_header = "Search".to_string();
@@ -515,7 +512,7 @@ impl App {
     fn update_pattern(&mut self) {
         let pattern = self.pattern_input.pattern();
         self.re = match RegexBuilder::new(pattern)
-            .case_insensitive(self.ignore_case)
+            .case_insensitive(self.regex_params.ignore_case)
             .build()
         {
             Ok(re) => Some(re),
@@ -525,14 +522,7 @@ impl App {
                 return;
             }
         };
-        let params = SearchParams {
-            paths: self.paths.clone(),
-            ignore_case: self.ignore_case,
-            multi_line: self.multi_line,
-            types: self.types.clone(),
-            threads: self.config.threads,
-        };
-        self.finder = Finder::new(pattern, &params);
+        self.finder = Finder::new(pattern, &self.regex_params);
         info!("New pattern: {pattern}");
         self.start_search();
         self.subs.clear();
@@ -598,12 +588,12 @@ impl App {
                     return Ok(State::Confirm);
                 }
                 Action::ToggleIgnoreCase => {
-                    self.ignore_case = !self.ignore_case;
+                    self.regex_params.ignore_case = !self.regex_params.ignore_case;
                     self.update_pattern();
                     return Ok(State::Continue);
                 }
                 Action::ToggleMultiLine => {
-                    self.multi_line = !self.multi_line;
+                    self.regex_params.multi_line = !self.regex_params.multi_line;
                     self.update_pattern();
                     return Ok(State::Continue);
                 }

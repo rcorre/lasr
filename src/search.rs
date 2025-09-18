@@ -44,6 +44,7 @@ pub fn search(mut finder: Finder, params: SearchParams, tx: Sender<FileMatch>) -
         builder.add(path);
     }
 
+    // Mostly for testing, this supports sorting entries for predictable results
     if params.threads == 1 {
         for path in builder.build() {
             match walk(&mut finder, path, &tx) {
@@ -81,7 +82,7 @@ mod tests {
     use crossbeam::channel::{RecvError, unbounded};
     use pretty_assertions::assert_eq;
 
-    use crate::finder::LineMatch;
+    use crate::finder::{LineMatch, RegexParams};
 
     use super::*;
 
@@ -101,12 +102,17 @@ mod tests {
 
         let params = SearchParams {
             paths: vec!["testdata".into()],
-            ignore_case: false,
-            multi_line: false,
             types: types(&[]),
             threads: 1,
         };
-        let finder = Finder::new("line", &params).unwrap();
+        let finder = Finder::new(
+            "line",
+            &RegexParams {
+                ignore_case: false,
+                multi_line: false,
+            },
+        )
+        .unwrap();
         search(finder, params, tx).unwrap();
 
         let mut results: Vec<_> = rx.iter().collect();
@@ -162,12 +168,17 @@ mod tests {
 
         let params = SearchParams {
             paths: vec!["testdata".into()],
-            ignore_case: true,
-            multi_line: false,
             types: types(&[]),
             threads: 1,
         };
-        let finder = Finder::new("the", &params).unwrap();
+        let finder = Finder::new(
+            "the",
+            &RegexParams {
+                ignore_case: true,
+                multi_line: false,
+            },
+        )
+        .unwrap();
         search(finder, params, tx).unwrap();
         let mut results: Vec<_> = rx.iter().collect();
         results.sort_by(|a, b| a.path.cmp(&b.path));
@@ -203,12 +214,17 @@ mod tests {
 
         let params = SearchParams {
             paths: vec!["testdata".into()],
-            ignore_case: true,
-            multi_line: false,
             types: types(&["md"]),
             threads: 1,
         };
-        let finder = Finder::new("First", &params).unwrap();
+        let finder = Finder::new(
+            "First",
+            &RegexParams {
+                ignore_case: true,
+                multi_line: false,
+            },
+        )
+        .unwrap();
         search(finder, params, tx).unwrap();
         let mut results: Vec<_> = rx.iter().collect();
         results.sort_by(|a, b| a.path.cmp(&b.path));
@@ -234,12 +250,17 @@ mod tests {
 
         let params = SearchParams {
             paths: vec!["testdata".into()],
-            ignore_case: false,
-            multi_line: false,
             types: types(&[]),
             threads: 1,
         };
-        let finder = Finder::new("$FN($$$ARGS)", &params).unwrap();
+        let finder = Finder::new(
+            "$FN($$$ARGS)",
+            &RegexParams {
+                ignore_case: false,
+                multi_line: false,
+            },
+        )
+        .unwrap();
         search(finder, params, tx).unwrap();
 
         let mut results: Vec<_> = rx.iter().collect();
@@ -282,12 +303,17 @@ mod tests {
 
         let params = SearchParams {
             paths: vec!["testdata".into()],
-            ignore_case: false,
-            multi_line: false,
             types: types(&[]),
             threads: 1,
         };
-        let finder = Finder::new("fn $FN", &params).unwrap();
+        let finder = Finder::new(
+            "fn $FN",
+            &RegexParams {
+                ignore_case: false,
+                multi_line: false,
+            },
+        )
+        .unwrap();
         search(finder, params, tx).unwrap();
 
         let mut results: Vec<_> = rx.iter().collect();
