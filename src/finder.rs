@@ -10,7 +10,7 @@ use std::{
     path::{Path, PathBuf},
     sync::OnceLock,
 };
-use tracing::trace;
+use tracing::{debug, trace};
 
 #[derive(Debug, PartialEq)]
 pub struct LineMatch {
@@ -79,6 +79,13 @@ impl Finder {
             Finder::Ast(f) => f.find(path),
         }
     }
+
+    pub fn replace(&mut self, path: &Path, text: &str, replacement: &str) -> Result<String> {
+        match self {
+            Finder::Regex(f) => f.replace(text, replacement),
+            Finder::Ast(f) => f.replace(path, text, replacement),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -89,7 +96,7 @@ pub struct RegexFinder {
 }
 
 impl RegexFinder {
-    pub fn new(pattern: &str, params: &RegexParams) -> Result<Self> {
+    fn new(pattern: &str, params: &RegexParams) -> Result<Self> {
         let regex = RegexBuilder::new(pattern)
             .case_insensitive(params.ignore_case)
             .build()
@@ -129,6 +136,10 @@ impl RegexFinder {
         )?;
 
         Ok(lines)
+    }
+
+    pub fn replace(&self, text: &str, replacement: &str) -> Result<String> {
+        Ok(self.regex.replace_all(text, replacement).to_string())
     }
 }
 
@@ -173,5 +184,20 @@ impl AstFinder {
                 text: m.text().into(),
             })
             .collect())
+    }
+
+    fn replace(&mut self, path: &Path, text: &str, replacement: &str) -> Result<String> {
+        let lang =
+            SupportLang::from_path(path).with_context(|| format!("No language for {path:?}"))?;
+
+        let pattern = Pattern::try_new(&self.pattern, lang)
+            .with_context(|| format!("Invalid pattern for language {lang:?}"))?;
+
+        let mut root = lang.ast_grep(text);
+        if let Err(e) = root.replace(pattern, replacement) {
+            debug!("Failed replacement: {e}");
+            return Ok(text.to_string());
+        }
+        Ok(root.get_text().to_string())
     }
 }
