@@ -1,4 +1,7 @@
-use std::{ops::Range, path::PathBuf};
+use std::{
+    ops::Range,
+    path::{Path, PathBuf},
+};
 
 use super::input::LineInput;
 use crate::{
@@ -16,8 +19,7 @@ use ratatui::{
     text::{Line, Span, Text},
     widgets::{Block, Paragraph, Row, Table, TableState},
 };
-use regex::{Regex, RegexBuilder};
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 
 // How many off-screen results to pre-populate
 const SEARCH_BUFFER: usize = 3;
@@ -37,20 +39,22 @@ struct TextSubstitution {
 }
 
 impl TextSubstitution {
-    fn new(line: LineMatch, re: &Regex, replacement: &str) -> Self {
+    fn new(path: &Path, line: LineMatch, finder: &Finder, replacement: &str) -> Self {
         Self {
             start_line: line.number,
             line_count: line.text.lines().count() as u16,
-            matches: re
-                .find_iter(&line.text)
-                .map(|m| {
-                    let range = Range {
-                        start: m.start(),
-                        end: m.end(),
+            matches: line
+                .ranges
+                .into_iter()
+                .map(|range| {
+                    let replacement = if replacement.is_empty() {
+                        "".to_string()
+                    } else {
+                        finder
+                            .replace(path, &line.text[range.clone()], replacement)
+                            .unwrap() // TODO
+                            .to_string()
                     };
-                    let replacement = re
-                        .replace_all(&line.text[range.clone()], replacement)
-                        .to_string();
                     Substitution { range, replacement }
                 })
                 .collect(),
@@ -58,12 +62,22 @@ impl TextSubstitution {
         }
     }
 
-    fn update_replacement(&mut self, re: &Regex, replacement: &str) {
+    fn update_replacement(
+        &mut self,
+        path: &Path,
+        finder: &Finder,
+        replacement: &str,
+    ) -> Result<()> {
         for m in &mut self.matches {
-            m.replacement = re
-                .replace_all(&self.text[m.range.clone()], replacement)
-                .to_string();
+            m.replacement = if replacement.is_empty() {
+                "".to_string()
+            } else {
+                finder
+                    .replace(path, &self.text[m.range.clone()], replacement)?
+                    .to_string()
+            }
         }
+        Ok(())
     }
 }
 
@@ -74,20 +88,22 @@ struct FileSubstitution {
 }
 
 impl FileSubstitution {
-    fn new(file: FileMatch, re: &Regex, replacement: &str) -> Self {
+    fn new(file: FileMatch, finder: &Finder, replacement: &str) -> Self {
         Self {
-            path: file.path,
             subs: file
                 .lines
                 .into_iter()
-                .map(|line| TextSubstitution::new(line, re, replacement))
+                .map(|line| TextSubstitution::new(&file.path, line, finder, replacement))
                 .collect(),
+            path: file.path,
         }
     }
 
-    fn update_replacement(&mut self, re: &Regex, replacement: &str) {
+    fn update_replacement(&mut self, finder: &Finder, replacement: &str) {
         for s in &mut self.subs {
-            s.update_replacement(re, replacement);
+            if let Err(e) = s.update_replacement(&self.path, finder, replacement) {
+                error!("Failed to update replacement: {e}");
+            }
         }
     }
 
@@ -184,7 +200,7 @@ fn test_line_substitution_to_text_find() {
             line_count: 1,
             text: "foo bar baz".into(),
             matches: vec![Substitution {
-                range: Range { start: 4, end: 7 },
+                range: 4..7,
                 replacement: "".to_string(),
             }],
         }
@@ -206,7 +222,7 @@ fn test_line_substitution_to_text_replace() {
             line_count: 1,
             text: "foo bar baz".into(),
             matches: vec![Substitution {
-                range: Range { start: 4, end: 7 },
+                range: 4..7,
                 replacement: "test".into()
             }],
         }
@@ -230,7 +246,7 @@ fn test_line_substitution_to_text_multiline() {
             line_count: 2,
             text: "foo bar baz\nbiz baz buz".into(),
             matches: vec![Substitution {
-                range: Range { start: 8, end: 15 },
+                range: 8..15,
                 replacement: "".to_string()
             }],
         }
@@ -259,11 +275,11 @@ fn test_line_substitution_to_text_multiline_split_on_newline() {
             text: "foo\nbar".into(),
             matches: vec![
                 Substitution {
-                    range: Range { start: 0, end: 3 },
+                    range: 0..3,
                     replacement: "".to_string()
                 },
                 Substitution {
-                    range: Range { start: 4, end: 7 },
+                    range: 4..7,
                     replacement: "".to_string()
                 }
             ],
@@ -289,7 +305,6 @@ pub struct App {
     pattern_input: LineInput,
     replacement_input: LineInput,
     editing_pattern: bool,
-    re: Option<Regex>,
     finder: Option<Finder>,
     scroll: usize,
 }
@@ -346,15 +361,14 @@ impl App {
             event_rx,
             subs: vec![],
             editing_pattern: true,
-            re: None,
             finder: None,
             scroll: 0,
         }
     }
 
     fn replace_all(&self) -> Result<()> {
-        let Some(ref re) = self.re else {
-            debug!("No replacement");
+        let Some(ref finder) = self.finder else {
+            debug!("No finder");
             return Ok(());
         };
 
@@ -363,8 +377,8 @@ impl App {
             let path = &sub.path;
             debug!("Replacing in {path:?}");
             let text = std::fs::read_to_string(path)?;
-            let text = re.replace_all(&text, self.replacement_input.pattern());
-            std::fs::write(path, text.as_ref())?;
+            let text = finder.replace(path, &text, self.replacement_input.pattern())?;
+            std::fs::write(path, text)?;
         }
 
         let Some(ref rx) = self.search_rx else {
@@ -377,8 +391,8 @@ impl App {
             let path = &finding.path;
             debug!("Replacing in {path:?}");
             let text = std::fs::read_to_string(path)?;
-            let text = re.replace_all(&text, self.replacement_input.pattern());
-            std::fs::write(path, text.as_ref())?;
+            let text = finder.replace(path, &text, self.replacement_input.pattern())?;
+            std::fs::write(path, text)?;
         }
 
         debug!("Replacement complete");
@@ -498,11 +512,11 @@ impl App {
     }
 
     fn on_finding(&mut self, finding: FileMatch) -> Result<()> {
-        let Some(ref re) = self.re else {
+        let Some(ref finder) = self.finder else {
             warn!("Got substitution, but no regex set");
             return Ok(());
         };
-        let sub = FileSubstitution::new(finding, re, self.replacement_input.pattern());
+        let sub = FileSubstitution::new(finding, finder, self.replacement_input.pattern());
         debug!("Pushing item: {sub:?}");
         self.subs.push(sub);
         debug!("Total items: {}", self.subs.len());
@@ -511,17 +525,6 @@ impl App {
 
     fn update_pattern(&mut self) {
         let pattern = self.pattern_input.pattern();
-        self.re = match RegexBuilder::new(pattern)
-            .case_insensitive(self.regex_params.ignore_case)
-            .build()
-        {
-            Ok(re) => Some(re),
-            Err(err) => {
-                // Expected to happen as the user is typing, not an error
-                info!("Not a valid regex: '{pattern}': {err}");
-                return;
-            }
-        };
         self.finder = Finder::new(pattern, &self.regex_params);
         info!("New pattern: {pattern}");
         self.start_search();
@@ -530,9 +533,9 @@ impl App {
 
     fn update_replacement(&mut self) {
         let replacement = self.replacement_input.pattern();
-        let Some(re) = &self.re else { return };
+        let Some(finder) = &self.finder else { return };
         for sub in &mut self.subs {
-            sub.update_replacement(re, replacement)
+            sub.update_replacement(finder, replacement);
         }
     }
 
@@ -781,6 +784,25 @@ mod tests {
 
     #[test]
     #[tracing_test::traced_test]
+    fn test_search_ast() {
+        let mut test = Test::new();
+        test.input("$FN($$$ARGS)");
+
+        // await results from 2 files
+        test.app.handle_events(true).unwrap();
+        test.app.handle_events(true).unwrap();
+
+        let mut terminal = Terminal::new(TestBackend::new(40, 20)).unwrap();
+        terminal
+            .draw(|frame| {
+                assert!(test.app.draw(frame).unwrap(), "Should need more results");
+            })
+            .unwrap();
+        assert_snapshot!(terminal.backend());
+    }
+
+    #[test]
+    #[tracing_test::traced_test]
     fn test_search_multiline() {
         let mut test = Test::new();
         test.input("\\w+\\n\\w+");
@@ -927,6 +949,57 @@ Line four.
 The first line.
 The second line.
 The third line.
+"
+        );
+    }
+
+    #[test]
+    #[tracing_test::traced_test]
+    fn test_replace_ast() {
+        let tmp = stage_files();
+
+        let mut test = Test::with_dir(tmp.path());
+        test.input("$FN($$$ARGS)");
+        test.app.handle_key_event(KeyCode::Tab.into()).unwrap();
+        test.input("$FN($$$ARGS, 5)");
+
+        // await results from 2 files
+        test.app.handle_events(true).unwrap();
+        test.app.handle_events(true).unwrap();
+
+        let mut terminal = Terminal::new(TestBackend::new(40, 20)).unwrap();
+        terminal
+            .draw(|frame| {
+                assert!(test.app.draw(frame).unwrap(), "Should need more results");
+            })
+            .unwrap();
+        assert_snapshot!(scrub_tmp(&tmp, terminal.backend()));
+
+        test.app.replace_all().unwrap();
+
+        let content = std::fs::read_to_string(tmp.path().join("main.rs")).unwrap();
+        assert_eq!(
+            content,
+            "\
+fn thing(x: u64, y: u64) {
+    println!(\"{x} {y}\");
+}
+
+fn main() {
+    thing(3, 5, 5);
+}
+"
+        );
+
+        let content = std::fs::read_to_string(tmp.path().join("main.py")).unwrap();
+        assert_eq!(
+            content,
+            "\
+def thing(x, y):
+    print(x + y, 5)
+
+
+thing(3, 5, 5)
 "
         );
     }

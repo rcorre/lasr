@@ -1,5 +1,5 @@
-use anyhow::{Context, Result};
-use ast_grep_core::{Pattern, language::Language};
+use anyhow::{Context, Result, bail};
+use ast_grep_core::{AstGrep, Doc, Pattern, language::Language, tree_sitter::ContentExt};
 use ast_grep_language::{LanguageExt, SupportLang};
 use grep::{
     regex::{RegexMatcher, RegexMatcherBuilder},
@@ -7,6 +7,7 @@ use grep::{
 };
 use regex::{Regex, RegexBuilder};
 use std::{
+    ops::Range,
     path::{Path, PathBuf},
     sync::OnceLock,
 };
@@ -16,6 +17,9 @@ use tracing::{debug, trace};
 pub struct LineMatch {
     pub number: u64,
     pub text: String,
+
+    // where we matched within the string
+    pub ranges: Vec<Range<usize>>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -80,7 +84,7 @@ impl Finder {
         }
     }
 
-    pub fn replace(&mut self, path: &Path, text: &str, replacement: &str) -> Result<String> {
+    pub fn replace(&self, path: &Path, text: &str, replacement: &str) -> Result<String> {
         match self {
             Finder::Regex(f) => f.replace(text, replacement),
             Finder::Ast(f) => f.replace(path, text, replacement),
@@ -130,6 +134,11 @@ impl RegexFinder {
                 lines.push(LineMatch {
                     number,
                     text: text.to_string(),
+                    ranges: self
+                        .regex
+                        .find_iter(text)
+                        .map(|m| m.start()..m.end())
+                        .collect(),
                 });
                 Ok(true)
             }),
@@ -179,14 +188,21 @@ impl AstFinder {
 
         Ok(node
             .find_all(pattern)
-            .map(|m| LineMatch {
-                number: m.start_pos().line() as u64,
-                text: m.text().into(),
+            .map(|m| {
+                let text = m.text();
+                LineMatch {
+                    number: m.start_pos().line() as u64,
+                    ranges: vec![Range {
+                        start: 0,
+                        end: text.len(),
+                    }],
+                    text: text.into(),
+                }
             })
             .collect())
     }
 
-    fn replace(&mut self, path: &Path, text: &str, replacement: &str) -> Result<String> {
+    fn replace(&self, path: &Path, text: &str, replacement: &str) -> Result<String> {
         let lang =
             SupportLang::from_path(path).with_context(|| format!("No language for {path:?}"))?;
 
@@ -194,10 +210,54 @@ impl AstFinder {
             .with_context(|| format!("Invalid pattern for language {lang:?}"))?;
 
         let mut root = lang.ast_grep(text);
-        if let Err(e) = root.replace(pattern, replacement) {
-            debug!("Failed replacement: {e}");
-            return Ok(text.to_string());
+        let node = root.root();
+
+        let edits = node.replace_all(&pattern, replacement);
+
+        // edits must be applied in reverse to avoid offset issues
+        for edit in edits.into_iter().rev() {
+            if let Err(e) = root.edit(edit) {
+                bail!("Failed to edit {path:?}: {e}");
+            }
         }
-        Ok(root.get_text().to_string())
+        Ok(root.generate())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    // TODO: test overlapping edits
+    #[test]
+    fn test_ast_replace() {
+        let finder = Finder::new(
+            "$FN($$$ARGS)",
+            &RegexParams {
+                ignore_case: true,
+                multi_line: true,
+            },
+        )
+        .unwrap();
+        let src = "\
+def thing(x, y):
+    print(x + y)
+
+
+thing(3, 5)
+";
+        let actual = finder
+            .replace(Path::new("example.py"), src, "$FN($$$ARGS, 5)")
+            .unwrap();
+
+        let expected = "\
+def thing(x, y):
+    print(x + y, 5)
+
+
+thing(3, 5, 5)
+";
+        assert_eq!(expected, actual);
     }
 }

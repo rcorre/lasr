@@ -1,3 +1,4 @@
+#![allow(clippy::single_range_in_vec_init)]
 use crate::finder::{FileMatch, Finder, SearchParams};
 use anyhow::Result;
 use crossbeam::channel::Sender;
@@ -127,14 +128,17 @@ mod tests {
                         LineMatch {
                             number: 1,
                             text: "The first line.\n".into(),
+                            ranges: vec![10..14],
                         },
                         LineMatch {
                             number: 2,
                             text: "The second line.\n".into(),
+                            ranges: vec![11..15],
                         },
                         LineMatch {
                             number: 3,
                             text: "The third line.\n".into(),
+                            ranges: vec![10..14],
                         },
                     ],
                 },
@@ -144,14 +148,17 @@ mod tests {
                         LineMatch {
                             number: 1,
                             text: "This is line one.\n".into(),
+                            ranges: vec![8..12],
                         },
                         LineMatch {
                             number: 2,
                             text: "This is line two.\n".into(),
+                            ranges: vec![8..12],
                         },
                         LineMatch {
                             number: 3,
                             text: "This is line three.\n".into(),
+                            ranges: vec![8..12],
                         },
                     ],
                 }
@@ -191,14 +198,17 @@ mod tests {
                     LineMatch {
                         number: 1,
                         text: "The first line.\n".into(),
+                        ranges: vec![0..3],
                     },
                     LineMatch {
                         number: 2,
                         text: "The second line.\n".into(),
+                        ranges: vec![0..3],
                     },
                     LineMatch {
                         number: 3,
                         text: "The third line.\n".into(),
+                        ranges: vec![0..3],
                     },
                 ],
             },]
@@ -236,6 +246,7 @@ mod tests {
                 lines: vec![LineMatch {
                     number: 1,
                     text: "# First heading\n".into(),
+                    ranges: vec![2..7],
                 },],
             },]
         );
@@ -275,10 +286,12 @@ mod tests {
                         LineMatch {
                             number: 1,
                             text: "print(x + y)".into(),
+                            ranges: vec![0..12],
                         },
                         LineMatch {
                             number: 4,
                             text: "thing(3, 5)".into(),
+                            ranges: vec![0..11],
                         },
                     ],
                 },
@@ -287,6 +300,7 @@ mod tests {
                     lines: vec![LineMatch {
                         number: 5,
                         text: "thing(3, 5)".into(),
+                        ranges: vec![0..11],
                     },],
                 },
             ]
@@ -327,10 +341,12 @@ mod tests {
                     LineMatch {
                         number: 0,
                         text: "fn thing(x: u64, y: u64) {\n    println!(\"{x} {y}\");\n}".into(),
+                        ranges: vec![0..53],
                     },
                     LineMatch {
                         number: 4,
                         text: "fn main() {\n    thing(3, 5);\n}".into(),
+                        ranges: vec![0..30],
                     },
                 ],
             },]
