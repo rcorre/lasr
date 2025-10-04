@@ -39,8 +39,8 @@ struct TextSubstitution {
 }
 
 impl TextSubstitution {
-    fn new(path: &Path, line: LineMatch, finder: &Finder, replacement: &str) -> Self {
-        Self {
+    fn new(path: &Path, line: LineMatch, finder: &Finder, replacement: &str) -> Result<Self> {
+        Ok(Self {
             start_line: line.number,
             line_count: line.text.lines().count() as u16,
             matches: line
@@ -51,15 +51,14 @@ impl TextSubstitution {
                         "".to_string()
                     } else {
                         finder
-                            .replace(path, &line.text[range.clone()], replacement)
-                            .unwrap() // TODO
+                            .replace(path, &line.text[range.clone()], replacement)?
                             .to_string()
                     };
-                    Substitution { range, replacement }
+                    anyhow::Ok(Substitution { range, replacement })
                 })
-                .collect(),
+                .collect::<Result<Vec<_>>>()?,
             text: line.text,
-        }
+        })
     }
 
     fn update_replacement(
@@ -88,15 +87,15 @@ struct FileSubstitution {
 }
 
 impl FileSubstitution {
-    fn new(file: FileMatch, finder: &Finder, replacement: &str) -> Self {
-        Self {
+    fn new(file: FileMatch, finder: &Finder, replacement: &str) -> Result<Self> {
+        Ok(Self {
             subs: file
                 .lines
                 .into_iter()
                 .map(|line| TextSubstitution::new(&file.path, line, finder, replacement))
-                .collect(),
+                .collect::<Result<_>>()?,
             path: file.path,
-        }
+        })
     }
 
     fn update_replacement(&mut self, finder: &Finder, replacement: &str) {
@@ -516,7 +515,7 @@ impl App {
             warn!("Got substitution, but no regex set");
             return Ok(());
         };
-        let sub = FileSubstitution::new(finding, finder, self.replacement_input.pattern());
+        let sub = FileSubstitution::new(finding, finder, self.replacement_input.pattern())?;
         debug!("Pushing item: {sub:?}");
         self.subs.push(sub);
         debug!("Total items: {}", self.subs.len());

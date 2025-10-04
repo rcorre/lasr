@@ -69,7 +69,7 @@ impl TryFrom<String> for Key {
                         "c" => KeyModifiers::CONTROL,
                         "a" => KeyModifiers::ALT,
                         _ => {
-                            panic!("TODO")
+                            bail!("Unknown modifier '{m}'");
                         }
                     }
                 }
@@ -133,6 +133,8 @@ fn test_key_from_string() {
         Key::char('a', KeyModifiers::CONTROL | KeyModifiers::ALT),
         "c-a-a".to_string().try_into().unwrap(),
     );
+
+    assert!(Key::try_from("x-a-a".to_string()).is_err());
 }
 
 impl From<Key> for String {

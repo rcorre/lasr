@@ -1,5 +1,5 @@
 use anyhow::{Context, Result, bail};
-use ast_grep_core::{AstGrep, Doc, Pattern, language::Language, tree_sitter::ContentExt};
+use ast_grep_core::{Pattern, language::Language};
 use ast_grep_language::{LanguageExt, SupportLang};
 use grep::{
     regex::{RegexMatcher, RegexMatcherBuilder},
@@ -11,7 +11,7 @@ use std::{
     path::{Path, PathBuf},
     sync::OnceLock,
 };
-use tracing::{debug, trace};
+use tracing::trace;
 
 #[derive(Debug, PartialEq)]
 pub struct LineMatch {
@@ -229,7 +229,6 @@ mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
 
-    // TODO: test overlapping edits
     #[test]
     fn test_ast_replace() {
         let finder = Finder::new(
@@ -258,6 +257,26 @@ def thing(x, y):
 
 thing(3, 5, 5)
 ";
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn test_ast_replace_overlapped() {
+        let finder = Finder::new(
+            "$FN($$$ARGS)",
+            &RegexParams {
+                ignore_case: true,
+                multi_line: true,
+            },
+        )
+        .unwrap();
+        let src = "foo(32, bar(s, y, baz()))";
+        let actual = finder
+            .replace(Path::new("example.py"), src, "$FN($$$ARGS, 5)")
+            .unwrap();
+
+        // ast-grep only performs the outer replacement
+        let expected = "foo(32, bar(s, y, baz()), 5)";
         assert_eq!(expected, actual);
     }
 }
