@@ -20,9 +20,11 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v4
-    - name: check
+    - name: Setup
+      run: rustup component add clippy
+    - name: Check
       run: cargo check
-    - name: clippy
+    - name: Clippy
       run: cargo clippy
     - name: Build
       run: cargo build --verbose
