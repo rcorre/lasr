@@ -183,9 +183,35 @@ pub struct KeyMap(HashMap<Key, Action>);
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct Theme {
+    #[serde(deserialize_with = "deserialize_style")]
     pub base: Style,
+    #[serde(deserialize_with = "deserialize_style")]
     pub find: Style,
+    #[serde(deserialize_with = "deserialize_style")]
     pub replace: Style,
+}
+
+fn deserialize_style<'de, D>(deserializer: D) -> Result<Style, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Debug, Serialize, Deserialize, PartialEq)]
+    struct ConfigStyle {
+        fg: Option<Color>,
+        bg: Option<Color>,
+        underline_color: Option<Color>,
+        add_modifier: Option<Modifier>,
+        sub_modifier: Option<Modifier>,
+    }
+
+    let cs = ConfigStyle::deserialize(deserializer)?;
+    Ok(Style {
+        fg: cs.fg,
+        bg: cs.bg,
+        underline_color: cs.underline_color,
+        add_modifier: cs.add_modifier.unwrap_or_default(),
+        sub_modifier: cs.sub_modifier.unwrap_or_default(),
+    })
 }
 
 impl Default for Theme {
