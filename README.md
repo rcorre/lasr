@@ -30,6 +30,10 @@ The replacement syntax is based on the [replace](https://docs.rs/regex/latest/re
 
 Replacements may reference numbered groups as `$1` or `${1}`, or named groups like `$foo` or `${foo}`. The `{}` brackets may be necessary to separate the replacement from other text. `$0` or `${0}` refers to the entire match.
 
+`lasr` also supports [ast-grep](https://github.com/ast-grep/ast-grep), to search and replace code structurally rather than matching text with a regex. If your search pattern contains an uppercase replacement like `$FN` or `$$$ARGS`, `lasr` will interpret it as an `ast-grep` pattern instead of a regex. For example, the pattern `$FN($$$ARGS)` matches a function call with any number of arguments. The replacement `$FN($$$ARGS, "foo")` would add a "foo" argument to every matched function call.
+
+You can read more about `ast-grep` syntax in the [ast-grep docs](https://ast-grep.github.io/guide/pattern-syntax.html).
+
 # Configuration
 
 The configuration file is located at `$XDG_CONFIG_HOME/lasr/lasr.toml` (`~/.config/lasr/lasr.toml` by default).
@@ -79,10 +83,10 @@ c-w = "delete_word"
 
 The following settings may be placed at the top-level of the config, not under any section:
 
-| Key          | Description                          | Default |
-| ------------ | ------------------------------------ | ------- |
-| `threads`    | Threads to use, 0 to auto-select     | `0`     |
-| `auto_pairs` | Auto-insert mathching pairs of `({[` | `true`  |
+| Key          | Description                         | Default |
+| ------------ | ----------------------------------- | ------- |
+| `threads`    | Threads to use, 0 to auto-select    | `0`     |
+| `auto_pairs` | Auto-insert matching pairs of `({[` | `true`  |
 
 ## Theme Config
 
@@ -165,8 +169,11 @@ Each value in the `keys` section is one of the following actions:
 
 Logs are located at `$XDG_CACHE_HOME/lasr/log.txt`. Log verbosity can be increased by setting the environment variable `RUST_LOG` to `debug` or `trace`. See [env_logger](https://docs.rs/env_logger/latest/env_logger/) for more info.
 
-# Other cool search/replace tools
+# Similar
 
-- [sad](https://github.com/ms-jpq/sad) allows you to approve/reject each replacement, but must be re-run each time you change the pattern.
-- [sd](https://github.com/chmln/sd) provides a simpler CLI alternative to `sed`, but is not interactive.
-- [ast-grep](https://github.com/ast-grep/ast-grep) is like `sed`/`grep`, but using tree-sitter to match code syntax.
+[serpl](https://github.com/yassinebridi/serpl) and [scooter](https://github.com/thomasschafer/scooter) are both "live" TUI search/replace tools similar to `lasr`.
+The main difference is that `lasr` focuses on showing results for multiple files "live" as you type, while `serpl` and `scooter` require changing focus to scroll through file results.
+
+[sad](https://github.com/ms-jpq/sad) is an interactive search and replace tool. It allows you to approve/reject each replacement, but must be re-run each time you change the pattern.
+
+[sd](https://github.com/chmln/sd) provides a simpler CLI alternative to `sed`, but is not interactive.
